@@ -119,16 +119,34 @@ all_allow_rules = None
 all_transitions = None
 
 
+def policy_sortkey(policy_path):
+    # Parse the extension of a policy path which looks like .../policy/policy.31
+    extension = policy_path.rsplit('/policy.', 1)[1]
+    try:
+        return int(extension), policy_path
+    except ValueError:
+        # Fallback with sorting on the full path
+        return 0, policy_path
+
 def get_installed_policy(root="/"):
     try:
         path = root + selinux.selinux_binary_policy_path()
         policies = glob.glob("%s.*" % path)
-        policies.sort()
+        policies.sort(key=policy_sortkey)
         return policies[-1]
     except:
         pass
     raise ValueError(_("No SELinux Policy installed"))
 
+def get_store_policy(store):
+    """Get the path to the policy file located in the given store name"""
+    policies = glob.glob("%s%s/policy/policy.*" %
+                         (selinux.selinux_path(), store))
+    if not policies:
+        return None
+    # Return the policy with the higher version number
+    policies.sort(key=policy_sortkey)
+    return policies[-1]
 
 def policy(policy_file):
     global all_domains
@@ -156,6 +174,11 @@ def policy(policy_file):
     except:
         raise ValueError(_("Failed to read %s policy file") % policy_file)
 
+def load_store_policy(store):
+    policy_file = get_store_policy(store)
+    if not policy_file:
+        return None
+    policy(policy_file)
 
 try:
     policy_file = get_installed_policy()
@@ -344,6 +367,8 @@ def search(types, seinfo=None):
         tertypes.append(NEVERALLOW)
     if AUDITALLOW in types:
         tertypes.append(AUDITALLOW)
+    if DONTAUDIT in types:
+        tertypes.append(DONTAUDIT)
 
     if len(tertypes) > 0:
         q = setools.TERuleQuery(_pol,
@@ -450,18 +475,16 @@ def get_file_types(setype):
 def get_real_type_name(name):
     """Return the real name of a type
 
-    * If 'name' refers to a type, return the same name.
     * If 'name' refers to a type alias, return the corresponding type name.
-    * Otherwise return None.
+    * Otherwise return the original name (even if the type does not exist).
     """
     if not name:
-        return None
+        return name
 
     try:
         return next(info(TYPE, name))["name"]
     except (RuntimeError, StopIteration):
-        return None
-
+        return name
 
 def get_writable_files(setype):
     file_types = get_all_file_types()
@@ -1074,10 +1097,12 @@ def _dict_has_perms(dict, perms):
 def gen_short_name(setype):
     all_domains = get_all_domains()
     if setype.endswith("_t"):
+        # replace aliases with corresponding types
+        setype = get_real_type_name(setype)
         domainname = setype[:-2]
     else:
         domainname = setype
-    if get_real_type_name(domainname + "_t") not in all_domains:
+    if domainname + "_t" not in all_domains:
         raise ValueError("domain %s_t does not exist" % domainname)
     if domainname[-1] == 'd':
         short_name = domainname[:-1] + "_"

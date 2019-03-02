@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fts.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -630,7 +631,7 @@ static int restorecon_sb(const char *pathname, const struct stat *sb,
 					     fc_count / efile_count) : 100;
 				fprintf(stdout, "\r%-.1f%%", (double)pc);
 			} else {
-				fprintf(stdout, "\r%luk", fc_count / STAR_COUNT);
+				fprintf(stdout, "\r%" PRIu64 "k", fc_count / STAR_COUNT);
 			}
 			fflush(stdout);
 		}
@@ -880,7 +881,7 @@ int selinux_restorecon(const char *pathname_orig,
 		setrestoreconlast = false;
 
 	/* Ignore restoreconlast on in-memory filesystems */
-	if (statfs(pathname, &sfsb) == 0) {
+	if (setrestoreconlast && statfs(pathname, &sfsb) == 0) {
 		if (sfsb.f_type == RAMFS_MAGIC || sfsb.f_type == TMPFS_MAGIC)
 			setrestoreconlast = false;
 	}
