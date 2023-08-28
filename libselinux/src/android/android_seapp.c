@@ -164,8 +164,14 @@ static void free_seapp_context(struct seapp_context *s)
 	free(s->level);
 }
 
-/* If any duplicate was found while sorting the entries */
-static bool seapp_contexts_dup = false;
+static bool is_platform(const char *partition) {
+	// system, system_ext, product are regarded as "platform", whereas vendor
+	// and odm are regarded as vendor.
+	if (strcmp(partition, "system") == 0) return true;
+	if (strcmp(partition, "system_ext") == 0) return true;
+	if (strcmp(partition, "product") == 0) return true;
+	return false;
+}
 
 /* Compare two seapp_context. Used to sort all the entries found. */
 static int seapp_context_cmp(const void *A, const void *B)
@@ -173,7 +179,6 @@ static int seapp_context_cmp(const void *A, const void *B)
 	const struct seapp_context *const *sp1 = (const struct seapp_context *const *) A;
 	const struct seapp_context *const *sp2 = (const struct seapp_context *const *) B;
 	const struct seapp_context *s1 = *sp1, *s2 = *sp2;
-	bool dup;
 
 	/* Give precedence to isSystemServer=true. */
 	if (s1->isSystemServer != s2->isSystemServer)
@@ -238,31 +243,11 @@ static int seapp_context_cmp(const void *A, const void *B)
 	if (s1->fromRunAs != s2->fromRunAs)
 		return (s1->fromRunAs ? -1 : 1);
 
-	/*
-	 * Check for a duplicated entry on the input selectors.
-	 * We already compared isSystemServer above.
-	 * We also have already checked that both entries specify the same
-	 * string fields, so if s1 has a non-NULL string, then so does s2.
-	 */
-	dup = (!s1->user.str || !strcmp(s1->user.str, s2->user.str)) &&
-		(!s1->seinfo || !strcmp(s1->seinfo, s2->seinfo)) &&
-		(!s1->name.str || !strcmp(s1->name.str, s2->name.str)) &&
-		(s1->isPrivAppSet && s1->isPrivApp == s2->isPrivApp) &&
-		(s1->isSystemServer && s1->isSystemServer == s2->isSystemServer) &&
-		(s1->isEphemeralAppSet && s1->isEphemeralApp == s2->isEphemeralApp) &&
-		(s1->isIsolatedComputeApp && s1->isIsolatedComputeApp == s2->isIsolatedComputeApp) &&
-		(s1->isSdkSandboxNext && s1->isSdkSandboxNext == s2->isSdkSandboxNext);
-
-	if (dup) {
-		seapp_contexts_dup = true;
-		selinux_log(SELINUX_ERROR, "seapp_contexts:  Duplicated entry\n");
-		if (s1->user.str)
-			selinux_log(SELINUX_ERROR, " user=%s\n", s1->user.str);
-		if (s1->seinfo)
-			selinux_log(SELINUX_ERROR, " seinfo=%s\n", s1->seinfo);
-		if (s1->name.str)
-			selinux_log(SELINUX_ERROR, " name=%s\n", s1->name.str);
-	}
+	/* Give precedence to platform side contexts */
+	bool isS1Platform = is_platform(s1->partition);
+	bool isS2Platform = is_platform(s2->partition);
+	if (isS1Platform != isS2Platform)
+		return (isS1Platform ? -1 : 1);
 
 	/* Anything else has equal precedence. */
 	return 0;
@@ -576,8 +561,40 @@ int seapp_context_reload_internal(const path_alts_t *context_paths)
 	qsort(seapp_contexts, nspec, sizeof(struct seapp_context *),
 	      seapp_context_cmp);
 
-	if (seapp_contexts_dup)
-		goto err_no_log;
+	for (int i = 0; i < nspec; i++) {
+		const struct seapp_context *s1 = seapp_contexts[i];
+		for (int j = i + 1; j < nspec; j++) {
+			const struct seapp_context *s2 = seapp_contexts[j];
+			if (seapp_context_cmp(&s1, &s2) != 0)
+				break;
+			/*
+			* Check for a duplicated entry on the input selectors.
+			* We already compared isSystemServer with seapp_context_cmp.
+			* We also have already checked that both entries specify the same
+			* string fields, so if s1 has a non-NULL string, then so does s2.
+			*/
+			bool dup = (!s1->user.str || !strcmp(s1->user.str, s2->user.str)) &&
+				(!s1->seinfo || !strcmp(s1->seinfo, s2->seinfo)) &&
+				(!s1->name.str || !strcmp(s1->name.str, s2->name.str)) &&
+				(!s1->isPrivAppSet || s1->isPrivApp == s2->isPrivApp) &&
+				(!s1->isEphemeralAppSet || s1->isEphemeralApp == s2->isEphemeralApp) &&
+				(s1->isIsolatedComputeApp == s2->isIsolatedComputeApp) &&
+				(s1->isSdkSandboxNext == s2->isSdkSandboxNext);
+
+			if (dup) {
+				selinux_log(SELINUX_ERROR, "seapp_contexts:  Duplicated entry\n");
+				if (s1->user.str)
+					selinux_log(SELINUX_ERROR, " user=%s\n", s1->user.str);
+				if (s1->seinfo)
+					selinux_log(SELINUX_ERROR, " seinfo=%s\n", s1->seinfo);
+				if (s1->name.str)
+					selinux_log(SELINUX_ERROR, " name=%s\n", s1->name.str);
+				if (s1->partition)
+					selinux_log(SELINUX_ERROR, " partition=%s\n", s1->partition);
+				goto err_no_log;
+			}
+		}
+	}
 
 #if DEBUG
 	{
@@ -693,18 +710,10 @@ static bool get_partition(const char *seinfo, char partition[], size_t size)
 	return true;
 }
 
-static bool is_platform(const char *partition) {
-	// system, system_ext, product are regarded as "platform", whereas vendor
-	// and odm are regarded as vendor.
-	if (strcmp(partition, "system") == 0) return true;
-	if (strcmp(partition, "system_ext") == 0) return true;
-	if (strcmp(partition, "product") == 0) return true;
-	return false;
-}
-
-static bool check_preinstalled_app_partition(const char *spec, const char *app) {
+static bool is_preinstalled_app_partition_valid(const char *app_policy, const char *app_partition) {
 	// We forbid system/system_ext/product installed apps from being labeled with vendor sepolicy.
-	return !is_platform(spec) && is_platform(app);
+	// So, either the app shouldn't be platform, or the spec should be platform.
+	return !(is_platform(app_partition) && !is_platform(app_policy));
 }
 
 
@@ -896,14 +905,6 @@ int seapp_context_lookup_internal(enum seapp_kind kind,
 		}
 
 		if (cur->levelFrom != LEVELFROM_NONE) {
-			if (isPreinstalledApp
-					&& !check_preinstalled_app_partition(cur->partition, partition)) {
-				// TODO(b/280547417): make this an error after fixing violations
-				selinux_log(SELINUX_ERROR,
-					"%s:  App %s preinstalled to %s can't be labeled with %s sepolicy",
-					__FUNCTION__, pkgname, partition, cur->partition);
-			}
-
 			int res = set_range_from_level(ctx, cur->levelFrom, userid, appid);
 			if (res != 0) {
 				return res;
@@ -911,6 +912,14 @@ int seapp_context_lookup_internal(enum seapp_kind kind,
 		} else if (cur->level) {
 			if (context_range_set(ctx, cur->level))
 				goto oom;
+		}
+
+		if (isPreinstalledApp
+				&& !is_preinstalled_app_partition_valid(cur->partition, partition)) {
+			// TODO(b/280547417): make this an error after fixing violations
+			selinux_log(SELINUX_WARNING,
+				"%s:  App %s preinstalled to %s can't be labeled with %s sepolicy",
+				__FUNCTION__, pkgname, partition, cur->partition);
 		}
 
 		break;
