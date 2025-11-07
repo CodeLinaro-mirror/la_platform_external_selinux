@@ -140,7 +140,7 @@ TEST_F(AndroidSELinuxTest, LoadAndLookupSeAppContext)
 TEST_F(AndroidSELinuxTest, LoadAndLookupSeAppContextPccComponent)
 {
 	int ret = LoadSeAppContexts(
-		"user=_pcc_components domain=pcc_component levelFrom=all\n"
+		"user=_pcc_component domain=pcc_component levelFrom=all\n"
 	);
 
 	EXPECT_EQ(ret, 0);
