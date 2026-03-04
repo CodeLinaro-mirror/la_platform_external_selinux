@@ -11,7 +11,6 @@ restorecon \- restore file(s) default SELinux security contexts.
 .RB [ \-v ]
 .RB [ \-i ]
 .RB [ \-F ]
-.RB [ \-U ]
 .RB [ \-W ]
 .RB [ \-I | \-D ]
 .RB [ \-x ]
@@ -31,7 +30,6 @@ restorecon \- restore file(s) default SELinux security contexts.
 .RB [ \-v ]
 .RB [ \-i ]
 .RB [ \-F ]
-.RB [ \-U ]
 .RB [ \-W ]
 .RB [ \-I | \-D ]
 .RB [ \-x ]
@@ -62,9 +60,7 @@ context,
 will only modify the type portion of the security context.
 The
 .B \-F
-and
-.B \-U
-options will force a replacement of the entire context.
+option will force a replacement of the entire context.
 .P
 If a file is labeled with
 .BR customizable
@@ -91,10 +87,6 @@ for
 .B \-F
 Force reset of context to match file_context for customizable files, and the
 default file context, changing the user, role, range portion as well as the type.
-.TP
-.B \-U
-In addition to the type portion also change the user and role portions, but
-not the range portion.
 .TP
 .B \-h, \-?
 display usage information and exit.
@@ -152,9 +144,6 @@ options are mutually exclusive.
 display warnings about entries that had no matching files by outputting the
 .BR selabel_stats (3)
 results.
-.TP
-.B \-c
-count and display the number of (would be) relabeled files. The exit code will be set to 0 only if at least one file is relabeled.
 .TP
 .B \-0
 the separator for the input items is assumed to be the null character

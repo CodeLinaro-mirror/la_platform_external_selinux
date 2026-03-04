@@ -66,12 +66,13 @@ static int semanage_user_extra_compare2(const semanage_user_extra_t *
 	return strcmp(user_extra->name, user_extra2->name);
 }
 
-static int semanage_user_extra_compare2_qsort(const void *p1, const void *p2)
+static int semanage_user_extra_compare2_qsort(const semanage_user_extra_t **
+					      user_extra,
+					      const semanage_user_extra_t **
+					      user_extra2)
 {
-	const semanage_user_extra_t *const *user_extra1 = p1;
-	const semanage_user_extra_t *const *user_extra2 = p2;
 
-	return semanage_user_extra_compare2(*user_extra1, *user_extra2);
+	return strcmp((*user_extra)->name, (*user_extra2)->name);
 }
 
 /* Name */
@@ -184,7 +185,7 @@ static int semanage_user_extra_compare2_qsort(const void *p1, const void *p2)
 }
 
 /* Record base functions */
-const record_table_t SEMANAGE_USER_EXTRA_RTABLE = {
+record_table_t SEMANAGE_USER_EXTRA_RTABLE = {
 	.create = semanage_user_extra_create,
 	.key_extract = semanage_user_extra_key_extract,
 	.key_free = semanage_user_key_free,

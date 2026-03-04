@@ -35,14 +35,14 @@ static __attribute__((__noreturn__)) void usage(const char *const name)
 {
 	if (iamrestorecon) {
 		fprintf(stderr,
-			"usage:  %s [-ciIDFUmnprRv0xT] [-e excludedir] pathname...\n"
-			"usage:  %s [-ciIDFUmnprRv0xT] [-e excludedir] -f filename\n",
+			"usage:  %s [-iIDFmnprRv0xT] [-e excludedir] pathname...\n"
+			"usage:  %s [-iIDFmnprRv0xT] [-e excludedir] -f filename\n",
 			name, name);
 	} else {
 		fprintf(stderr,
-			"usage:  %s [-diIDlmnpqvACEFUWT] [-e excludedir] [-r alt_root_path] [-c policyfile] spec_file pathname...\n"
-			"usage:  %s [-diIDlmnpqvACEFUWT] [-e excludedir] [-r alt_root_path] [-c policyfile] spec_file -f filename\n"
-			"usage:  %s -s [-diIDlmnpqvAFUWT] spec_file\n",
+			"usage:  %s [-diIDlmnpqvCEFWT] [-e excludedir] [-r alt_root_path] [-c policyfile] spec_file pathname...\n"
+			"usage:  %s [-diIDlmnpqvCEFWT] [-e excludedir] [-r alt_root_path] [-c policyfile] spec_file -f filename\n"
+			"usage:  %s -s [-diIDlmnpqvFWT] spec_file\n",
 			name, name, name);
 	}
 	exit(-1);
@@ -146,12 +146,11 @@ int main(int argc, char **argv)
 	size_t buf_len, nthreads = 1;
 	const char *base;
 	int errors = 0;
-	const char *ropts = "ce:f:hiIDlmno:pqrsvFURW0xT:";
-	const char *sopts = "c:de:f:hiIDlmno:pqr:svACEFUR:W0T:";
+	const char *ropts = "e:f:hiIDlmno:pqrsvFRW0xT:";
+	const char *sopts = "c:de:f:hiIDlmno:pqr:svCEFR:W0T:";
 	const char *opts;
 	union selinux_callback cb;
 	long unsigned skipped_errors;
-	long unsigned relabeled_files;
 
 	/* Initialize variables */
 	memset(&r_opts, 0, sizeof(r_opts));
@@ -161,7 +160,6 @@ int main(int argc, char **argv)
 	request_digest = 0;
 	policyfile = NULL;
 	skipped_errors = 0;
-	relabeled_files = 0;
 
 	if (!argv[0]) {
 		fprintf(stderr, "Called without required program name!\n");
@@ -225,10 +223,7 @@ int main(int argc, char **argv)
 	while ((opt = getopt(argc, argv, opts)) > 0) {
 		switch (opt) {
 		case 'c':
-			if (iamrestorecon) {
-				r_opts.count_relabeled = SELINUX_RESTORECON_COUNT_RELABELED;
-				break;
-			} else {
+			{
 				FILE *policystream;
 
 				policyfile = optarg;
@@ -303,10 +298,6 @@ int main(int argc, char **argv)
 			r_opts.set_specctx =
 					   SELINUX_RESTORECON_SET_SPECFILE_CTX;
 			break;
-		case 'U':
-			r_opts.set_user_role =
-					   SELINUX_RESTORECON_SET_USER_ROLE;
-			break;
 		case 'm':
 			r_opts.ignore_mounts =
 					   SELINUX_RESTORECON_IGNORE_MOUNTS;
@@ -379,9 +370,6 @@ int main(int argc, char **argv)
 			nthreads = strtoull(optarg, &endptr, 10);
 			if (*optarg == '\0' || *endptr != '\0')
 				usage(argv[0]);
-			break;
-		case 'A':
-			r_opts.add_assoc = 0;
 			break;
 		case 'h':
 		case '?':
@@ -462,14 +450,14 @@ int main(int argc, char **argv)
 			if (!strcmp(buf, "/"))
 				r_opts.mass_relabel = SELINUX_RESTORECON_MASS_RELABEL;
 			errors |= process_glob(buf, &r_opts, nthreads,
-					       &skipped_errors, &relabeled_files) < 0;
+					       &skipped_errors) < 0;
 		}
 		if (strcmp(input_filename, "-") != 0)
 			fclose(f);
 	} else {
 		for (i = optind; i < argc; i++)
 			errors |= process_glob(argv[i], &r_opts, nthreads,
-					       &skipped_errors, &relabeled_files) < 0;
+					       &skipped_errors) < 0;
 	}
 
 	if (r_opts.mass_relabel && !r_opts.nochange)
@@ -483,15 +471,6 @@ int main(int argc, char **argv)
 
 	if (r_opts.progress)
 		fprintf(stdout, "\n");
-
-	/* Output relabeled file count if requested */
-	if (r_opts.count_relabeled) {
-		long unsigned relabeled_count = selinux_restorecon_get_relabeled_files();
-		printf("Relabeled %lu files\n", relabeled_count);
-
-		/* Set exit code to 0 if at least one file was relabeled */
-		exit(errors ? -1 : relabeled_count ? 0 : 1);
-	}
 
 	exit(errors ? -1 : skipped_errors ? 1 : 0);
 }
