@@ -69,9 +69,6 @@ static struct dir_xattr *dir_xattr_last;
 /* Number of errors ignored during the file tree walk. */
 static long unsigned skipped_errors;
 
-/* Number of successfully relabeled files or files that would be relabeled */
-static long unsigned relabeled_files;
-
 /* restorecon_flags for passing to restorecon_sb() */
 struct rest_flags {
 	bool nochange;
@@ -79,7 +76,6 @@ struct rest_flags {
 	bool progress;
 	bool mass_relabel;
 	bool set_specctx;
-	bool set_user_role;
 	bool add_assoc;
 	bool recurse;
 	bool userealpath;
@@ -91,7 +87,6 @@ struct rest_flags {
 	bool warnonnomatch;
 	bool conflicterror;
 	bool count_errors;
-	bool count_relabeled;
 };
 
 static void restorecon_init(void)
@@ -590,76 +585,54 @@ static void filespec_destroy(void)
 /*
  * Called if SELINUX_RESTORECON_SET_SPECFILE_CTX is not set to check if
  * the type components differ, updating newtypecon if so.
- * Also update user and role components if
- * SELINUX_RESTORECON_SET_USER_ROLE is set.
  */
-static int compare_portions(const char *curcon, const char *newcon,
-			    bool set_user_role, char **newtypecon)
+static int compare_types(const char *curcon, const char *newcon, char **newtypecon)
 {
-	context_t curctx;
-	context_t newctx;
-	bool update = false;
+	int types_differ = 0;
+	context_t cona;
+	context_t conb;
 	int rc = 0;
 
-	curctx = context_new(curcon);
-	if (!curctx) {
+	cona = context_new(curcon);
+	if (!cona) {
 		rc = -1;
 		goto out;
 	}
-	newctx = context_new(newcon);
-	if (!newctx) {
-		context_free(curctx);
+	conb = context_new(newcon);
+	if (!conb) {
+		context_free(cona);
 		rc = -1;
 		goto out;
 	}
 
-	if (strcmp(context_type_get(curctx), context_type_get(newctx)) != 0) {
-		update = true;
-		rc = context_type_set(curctx, context_type_get(newctx));
-		if (rc)
-		    goto err;
-	}
-
-	if (set_user_role) {
-		if (strcmp(context_user_get(curctx), context_user_get(newctx)) != 0) {
-			update = true;
-			rc = context_user_set(curctx, context_user_get(newctx));
-			if (rc)
+	types_differ = strcmp(context_type_get(cona), context_type_get(conb));
+	if (types_differ) {
+		rc |= context_user_set(conb, context_user_get(cona));
+		rc |= context_role_set(conb, context_role_get(cona));
+		rc |= context_range_set(conb, context_range_get(cona));
+		if (!rc) {
+			*newtypecon = strdup(context_str(conb));
+			if (!*newtypecon) {
+				rc = -1;
 				goto err;
+			}
 		}
-
-		if (strcmp(context_role_get(curctx), context_role_get(newctx)) != 0) {
-			update = true;
-			rc = context_role_set(curctx, context_role_get(newctx));
-			if (rc)
-				goto err;
-		}
-	}
-
-	if (update) {
-		*newtypecon = context_to_str(curctx);
-		if (!*newtypecon) {
-			rc = -1;
-			goto err;
-		}
-	} else {
-		*newtypecon = NULL;
 	}
 
 err:
-	context_free(curctx);
-	context_free(newctx);
+	context_free(cona);
+	context_free(conb);
 out:
 	return rc;
 }
 
 static int restorecon_sb(const char *pathname, const struct stat *sb,
-			    const struct rest_flags *flags, bool first, bool *updated_out)
+			    const struct rest_flags *flags, bool first)
 {
 	char *newcon = NULL;
 	char *curcon = NULL;
+	char *newtypecon = NULL;
 	int rc;
-	bool updated = false;
 	const char *lookup_path = pathname;
 
 	if (rootpath) {
@@ -731,9 +704,6 @@ static int restorecon_sb(const char *pathname, const struct stat *sb,
 			    pathname, newcon);
 
 	if (lgetfilecon_raw(pathname, &curcon) < 0) {
-		/* Ignore files removed during relabeling if ignore_noent is set */
-		if (flags->ignore_noent && errno == ENOENT)
-			goto out;
 		if (errno != ENODATA)
 			goto err;
 
@@ -741,6 +711,7 @@ static int restorecon_sb(const char *pathname, const struct stat *sb,
 	}
 
 	if (curcon == NULL || strcmp(curcon, newcon) != 0) {
+		bool updated = false;
 
 		if (!flags->set_specctx && curcon &&
 				    (is_context_customizable(curcon) > 0)) {
@@ -753,13 +724,8 @@ static int restorecon_sb(const char *pathname, const struct stat *sb,
 		}
 
 		if (!flags->set_specctx && curcon) {
-			char *newtypecon;
-
-			/* If types are different then update newcon.
-			 * Also update if SELINUX_RESTORECON_SET_USER_ROLE
-			 * is set and user or role differs.
-			 */
-			rc = compare_portions(curcon, newcon, flags->set_user_role, &newtypecon);
+			/* If types different then update newcon. */
+			rc = compare_types(curcon, newcon, &newtypecon);
 			if (rc)
 				goto err;
 
@@ -772,14 +738,8 @@ static int restorecon_sb(const char *pathname, const struct stat *sb,
 		}
 
 		if (!flags->nochange) {
-			if (lsetfilecon(pathname, newcon) < 0) {
-				/* Ignore files removed during relabeling if ignore_noent is set */
-				if (flags->ignore_noent && errno == ENOENT)
-					goto out;
-				else
-					goto err;
-			}
-
+			if (lsetfilecon(pathname, newcon) < 0)
+				goto err;
 			updated = true;
 		}
 
@@ -800,14 +760,9 @@ static int restorecon_sb(const char *pathname, const struct stat *sb,
 				syslog(LOG_INFO, "labeling %s to %s\n",
 					    pathname, newcon);
 		}
-
-		/* Note: relabel counting handled by caller */
-
 	}
 
 out:
-	if (updated_out)
-		*updated_out = updated;
 	rc = 0;
 out1:
 	freecon(curcon);
@@ -896,7 +851,6 @@ struct rest_state {
 	bool abort;
 	int error;
 	long unsigned skipped_errors;
-	long unsigned relabeled_files;
 	int saved_errno;
 	pthread_mutex_t mutex;
 };
@@ -951,10 +905,9 @@ loop_body:
 		case FTS_NS:
 			error = errno;
 			errno = ftsent->fts_errno;
-			if (!state->flags.ignore_noent || errno != ENOENT)
-				selinux_log(SELINUX_ERROR,
-					    "Could not stat %s: %m.\n",
-					    ftsent->fts_path);
+			selinux_log(SELINUX_ERROR,
+				    "Could not stat %s: %m.\n",
+				    ftsent->fts_path);
 			errno = error;
 			fts_set(fts, ftsent, FTS_SKIP);
 			continue;
@@ -1020,9 +973,8 @@ loop_body:
 			if (state->parallel)
 				pthread_mutex_unlock(&state->mutex);
 
-			bool updated = false;
 			error = restorecon_sb(ent_path, &ent_st, &state->flags,
-					      first, &updated);
+					      first);
 
 			if (state->parallel) {
 				pthread_mutex_lock(&state->mutex);
@@ -1041,8 +993,6 @@ loop_body:
 					state->skipped_errors++;
 				else
 					state->error = error;
-			} else if (updated && state->flags.count_relabeled) {
-				state->relabeled_files++;
 			}
 			break;
 		}
@@ -1075,8 +1025,6 @@ static int selinux_restorecon_common(const char *pathname_orig,
 		    SELINUX_RESTORECON_RECURSE) ? true : false;
 	state.flags.set_specctx = (restorecon_flags &
 		    SELINUX_RESTORECON_SET_SPECFILE_CTX) ? true : false;
-	state.flags.set_user_role = (restorecon_flags &
-		    SELINUX_RESTORECON_SET_USER_ROLE) ? true : false;
 	state.flags.userealpath = (restorecon_flags &
 		   SELINUX_RESTORECON_REALPATH) ? true : false;
 	state.flags.set_xdev = (restorecon_flags &
@@ -1100,8 +1048,6 @@ static int selinux_restorecon_common(const char *pathname_orig,
 		    SELINUX_RESTORECON_IGNORE_DIGEST) ? true : false;
 	state.flags.count_errors = (restorecon_flags &
 		    SELINUX_RESTORECON_COUNT_ERRORS) ? true : false;
-	state.flags.count_relabeled = (restorecon_flags &
-		    SELINUX_RESTORECON_COUNT_RELABELED) ? true : false;
 	state.setrestorecondigest = true;
 
 	state.head = NULL;
@@ -1109,7 +1055,6 @@ static int selinux_restorecon_common(const char *pathname_orig,
 	state.abort = false;
 	state.error = 0;
 	state.skipped_errors = 0;
-	state.relabeled_files = 0;
 	state.saved_errno = 0;
 
 	struct stat sb;
@@ -1231,11 +1176,7 @@ static int selinux_restorecon_common(const char *pathname_orig,
 			goto cleanup;
 		}
 
-		bool updated = false;
-		error = restorecon_sb(pathname, &sb, &state.flags, true, &updated);
-		if (updated && state.flags.count_relabeled) {
-			state.relabeled_files++;
-		}
+		error = restorecon_sb(pathname, &sb, &state.flags, true);
 		goto cleanup;
 	}
 
@@ -1361,7 +1302,6 @@ out:
 	(void) fts_close(state.fts);
 	errno = state.saved_errno;
 cleanup:
-	relabeled_files = state.relabeled_files;
 	if (state.flags.add_assoc) {
 		if (state.flags.verbose)
 			filespec_eval();
@@ -1426,10 +1366,6 @@ void selinux_restorecon_set_sehandle(struct selabel_handle *hndl)
 	char **specfiles;
 	unsigned char *fc_digest;
 	size_t num_specfiles, fc_digest_len;
-
-	if (fc_sehandle) {
-		selabel_close(fc_sehandle);
-	}
 
 	fc_sehandle = hndl;
 	if (!fc_sehandle)
@@ -1638,9 +1574,4 @@ cleanup:
 long unsigned selinux_restorecon_get_skipped_errors(void)
 {
 	return skipped_errors;
-}
-
-long unsigned selinux_restorecon_get_relabeled_files(void)
-{
-	return relabeled_files;
 }

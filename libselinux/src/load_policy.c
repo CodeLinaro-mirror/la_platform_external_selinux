@@ -16,7 +16,6 @@
 #include <sepol/policydb.h>
 #endif
 #include <dlfcn.h>
-#include "callbacks.h"
 #include "policy.h"
 #include <limits.h>
 
@@ -137,25 +136,25 @@ int selinux_mkload_policy(int preservebools __attribute__((unused)))
 		fd = open(path, O_RDONLY | O_CLOEXEC);
 	}
 	if (fd < 0) {
-		selinux_log(SELINUX_ERROR,
-		            "SELinux:  Could not open policy file <= %s.%d:  %m\n",
-		            selinux_binary_policy_path(), maxvers);
+		fprintf(stderr,
+			"SELinux:  Could not open policy file <= %s.%d:  %m\n",
+			selinux_binary_policy_path(), maxvers);
 		goto dlclose;
 	}
 
 	if (fstat(fd, &sb) < 0) {
-		selinux_log(SELINUX_ERROR,
-		            "SELinux:  Could not stat policy file %s:  %m\n",
-		            path);
+		fprintf(stderr,
+			"SELinux:  Could not stat policy file %s:  %m\n",
+			path);
 		goto close;
 	}
 
 	size = sb.st_size;
 	data = map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (map == MAP_FAILED) {
-		selinux_log(SELINUX_ERROR,
-		            "SELinux:  Could not map policy file %s:  %m\n",
-		            path);
+		fprintf(stderr,
+			"SELinux:  Could not map policy file %s:  %m\n",
+			path);
 		goto close;
 	}
 
@@ -176,9 +175,9 @@ int selinux_mkload_policy(int preservebools __attribute__((unused)))
 		if (policydb_set_vers(policydb, kernvers) ||
 		    policydb_to_image(NULL, policydb, &data, &size)) {
 			/* Downgrade failed, keep searching. */
-			selinux_log(SELINUX_ERROR,
-			            "SELinux:  Could not downgrade policy file %s, searching for an older version.\n",
-			            path);
+			fprintf(stderr,
+				"SELinux:  Could not downgrade policy file %s, searching for an older version.\n",
+				path);
 			policy_file_free(pf);
 			policydb_free(policydb);
 			munmap(map, sb.st_size);
@@ -193,9 +192,9 @@ int selinux_mkload_policy(int preservebools __attribute__((unused)))
 	rc = security_load_policy(data, size);
 	
 	if (rc)
-		selinux_log(SELINUX_ERROR,
-		            "SELinux:  Could not load policy file %s:  %m\n",
-		            path);
+		fprintf(stderr,
+			"SELinux:  Could not load policy file %s:  %m\n",
+			path);
 
       unmap:
 	if (data != map)
@@ -206,7 +205,7 @@ int selinux_mkload_policy(int preservebools __attribute__((unused)))
       dlclose:
 #ifdef SHARED
 	if (errormsg)
-		selinux_log(SELINUX_ERROR, "libselinux:  %s\n", errormsg);
+		fprintf(stderr, "libselinux:  %s\n", errormsg);
 	if (libsepolh)
 		dlclose(libsepolh);
 #endif
@@ -245,28 +244,17 @@ int selinux_init_load_policy(int *enforce)
 	rc = mount("proc", "/proc", "proc", 0, 0);
 	cfg = fopen("/proc/cmdline", "re");
 	if (cfg) {
+		char *tmp;
 		buf = malloc(selinux_page_size);
 		if (!buf) {
 			fclose(cfg);
 			return -1;
 		}
-		if (fgets(buf, selinux_page_size, cfg)) {
-			char *search = buf;
-			char *tmp;
-			while ((tmp = strstr(search, "enforcing="))) {
-				if (tmp == buf || isspace((unsigned char)*(tmp - 1))) {
-					char *valstr = tmp + sizeof("enforcing=") - 1;
-					char *endptr;
-					errno = 0;
-					const long val = strtol(valstr, &endptr, 0);
-					if (endptr != valstr && errno == 0) {
-						secmdline = val ? 1 : 0;
-					} else {
-						secmdline = 0;
-					}
-				}
-				/* advance past the current substring, latter arguments take precedence */
-				search = tmp + sizeof("enforcing=") - 1;
+		if (fgets(buf, selinux_page_size, cfg) &&
+		    (tmp = strstr(buf, "enforcing="))) {
+			if (tmp == buf || isspace((unsigned char)*(tmp - 1))) {
+				secmdline =
+				    atoi(tmp + sizeof("enforcing=") - 1);
 			}
 		}
 		fclose(cfg);
@@ -318,7 +306,7 @@ int selinux_init_load_policy(int *enforce)
 			*enforce = 0;
 		} else {
 			/* Only emit this error if selinux was not disabled */
-			selinux_log(SELINUX_ERROR, "Mount failed for selinuxfs on %s:  %m\n", SELINUXMNT);
+			fprintf(stderr, "Mount failed for selinuxfs on %s:  %m\n", SELINUXMNT);
 		}
 
 		if (rc == 0)
@@ -366,7 +354,7 @@ int selinux_init_load_policy(int *enforce)
 	if (orig_enforce != *enforce) {
 		rc = security_setenforce(*enforce);
 		if (rc < 0) {
-			selinux_log(SELINUX_ERROR, "SELinux:  Unable to switch to %s mode:  %m\n", (*enforce ? "enforcing" : "permissive"));
+			fprintf(stderr, "SELinux:  Unable to switch to %s mode:  %m\n", (*enforce ? "enforcing" : "permissive"));
 			if (*enforce)
 				goto noload;
 		}

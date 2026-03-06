@@ -186,7 +186,6 @@ db_close(struct selabel_handle *rec)
 		free(spec->key);
 		free(spec->lr.ctx_raw);
 		free(spec->lr.ctx_trans);
-		__pthread_mutex_destroy(&spec->lr.lock);
 	}
 	free(catalog);
 }
@@ -359,7 +358,6 @@ out_error:
 		free(spec->key);
 		free(spec->lr.ctx_raw);
 		free(spec->lr.ctx_trans);
-		__pthread_mutex_destroy(&spec->lr.lock);
 	}
 	free(catalog);
 	fclose(filp);

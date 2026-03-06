@@ -45,10 +45,10 @@ static int bzip(semanage_handle_t *sh, const char *filename, void *data,
 	size_t  size = 1<<16;
 	int     bzerror;
 	size_t  total = 0;
-	size_t len;
+	size_t len = 0;
 	FILE *f;
 
-	if ((f = fopen(filename, "wbe")) == NULL) {
+	if ((f = fopen(filename, "wb")) == NULL) {
 		return -1;
 	}
 
@@ -104,7 +104,7 @@ static ssize_t bunzip(semanage_handle_t *sh, FILE *f, void **data)
 	size_t   total = 0;
 	uint8_t* uncompress = NULL;
 	uint8_t* tmpalloc = NULL;
-	ssize_t  ret = -1;
+	int      ret = -1;
 
 	buf = malloc(bufsize);
 	if (buf == NULL) {
@@ -177,15 +177,15 @@ int map_compressed_file(semanage_handle_t *sh, const char *path,
 	int ret = 0, fd = -1;
 	FILE *file = NULL;
 
-	fd = open(path, O_RDONLY | O_CLOEXEC);
+	fd = open(path, O_RDONLY);
 	if (fd == -1) {
-		ERR(sh, "Unable to open %s.", path);
+		ERR(sh, "Unable to open %s\n", path);
 		return -1;
 	}
 
 	file = fdopen(fd, "r");
 	if (file == NULL) {
-		ERR(sh, "Unable to open %s.", path);
+		ERR(sh, "Unable to open %s\n", path);
 		close(fd);
 		return -1;
 	}

@@ -1,11 +1,9 @@
-#include <assert.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
 #include "selinux_internal.h"
@@ -88,34 +86,32 @@ static void init_procattr(void)
 static int openattr(pid_t pid, const char *attr, int flags)
 {
 	int fd, rc;
-	char path[44];  /* must hold "/proc/self/task/%d/attr/sockcreate" */
+	char *path;
 	pid_t tid;
 
-	static_assert(sizeof(pid_t) <= sizeof(uint32_t), "content written to path might get truncated");
-
 	if (pid > 0) {
-		rc = snprintf(path, sizeof(path), "/proc/%d/attr/%s", pid, attr);
+		rc = asprintf(&path, "/proc/%d/attr/%s", pid, attr);
 	} else if (pid == 0) {
-		rc = snprintf(path, sizeof(path), "/proc/thread-self/attr/%s", attr);
-		if (rc < 0 || (size_t)rc >= sizeof(path)) {
-			errno = EOVERFLOW;
+		rc = asprintf(&path, "/proc/thread-self/attr/%s", attr);
+		if (rc < 0)
 			return -1;
-		}
 		fd = open(path, flags | O_CLOEXEC);
 		if (fd >= 0 || errno != ENOENT)
-			return fd;
+			goto out;
+		free(path);
 		tid = selinux_gettid();
-		rc = snprintf(path, sizeof(path), "/proc/self/task/%d/attr/%s", tid, attr);
+		rc = asprintf(&path, "/proc/self/task/%d/attr/%s", tid, attr);
 	} else {
 		errno = EINVAL;
 		return -1;
 	}
-	if (rc < 0 || (size_t)rc >= sizeof(path)) {
-		errno = EOVERFLOW;
+	if (rc < 0)
 		return -1;
-	}
 
-	return open(path, flags | O_CLOEXEC);
+	fd = open(path, flags | O_CLOEXEC);
+out:
+	free(path);
+	return fd;
 }
 
 static int getprocattrcon_raw(char **context, pid_t pid, const char *attr,
@@ -143,31 +139,33 @@ static int getprocattrcon_raw(char **context, pid_t pid, const char *attr,
 		return -1;
 
 	size = selinux_page_size;
-	buf = calloc(1, size);
+	buf = malloc(size);
 	if (!buf) {
 		ret = -1;
 		goto out;
 	}
+	memset(buf, 0, size);
 
 	do {
 		ret = read(fd, buf, size - 1);
 	} while (ret < 0 && errno == EINTR);
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	if (ret == 0) {
 		*context = NULL;
-		goto out;
+		goto out2;
 	}
 
 	*context = strdup(buf);
 	if (!(*context)) {
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 	ret = 0;
-      out:
+      out2:
 	free(buf);
+      out:
 	errno_hold = errno;
 	close(fd);
 	errno = errno_hold;
