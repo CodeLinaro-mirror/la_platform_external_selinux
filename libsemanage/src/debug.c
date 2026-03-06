@@ -1,6 +1,6 @@
 /* Author: Joshua Brindle <jbrindle@tresys.co
  *         Jason Tang     <jtang@tresys.com>
- *         Ivan Gyurdiev  <ivg2@cornell.edu>
+ *         Ivan Gyurdiev  <ivg2@cornell.edu> 
  *
  * Copyright (C) 2004-2005 Tresys Technology, LLC
  * Copyright (C) 2005 Red Hat Inc.
@@ -79,10 +79,8 @@ void semanage_msg_default_handler(void *varg __attribute__ ((unused)),
 	vfprintf(stream, fmt, ap);
 	va_end(ap);
 
-	if (errsv && errsv != ENOMEM) {
-		errno = errsv;
-		fprintf(stream, " (%m).");
-	}
+	if (errsv && errsv != ENOMEM)
+		fprintf(stream, " (%s).", strerror(errsv));
 
 	fprintf(stream, "\n");
 }
@@ -109,6 +107,7 @@ void semanage_msg_relay_handler(void *varg,
 	sh->msg_channel = sepol_msg_get_channel(sepolh);
 	sh->msg_level = sepol_msg_get_level(sepolh);	/* XXX should map values */
 	sh->msg_callback(sh->msg_callback_arg, sh, "%s", buffer);
+	return;
 }
 
 extern void semanage_msg_set_callback(semanage_handle_t * handle,

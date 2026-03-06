@@ -41,12 +41,11 @@ int semanage_node_compare2(const semanage_node_t * node,
 }
 
 
- int semanage_node_compare2_qsort(const void *p1, const void *p2)
+ int semanage_node_compare2_qsort(const semanage_node_t ** node,
+					const semanage_node_t ** node2)
 {
-	const semanage_node_t *const *node1 = p1;
-	const semanage_node_t *const *node2 = p2;
 
-	return sepol_node_compare2(*node1, *node2);
+	return sepol_node_compare2(*node, *node2);
 }
 
 int semanage_node_key_create(semanage_handle_t * handle,
@@ -209,7 +208,7 @@ void semanage_node_free(semanage_node_t * node)
 
 
 /* Port base functions */
-const record_table_t SEMANAGE_NODE_RTABLE = {
+record_table_t SEMANAGE_NODE_RTABLE = {
 	.create = semanage_node_create,
 	.key_extract = semanage_node_key_extract,
 	.key_free = semanage_node_key_free,

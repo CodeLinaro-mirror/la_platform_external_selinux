@@ -10,5 +10,9 @@ install: all
 
 relabel:
 
+indent:
+	../../scripts/Lindent $(wildcard selinux/*.h)
+
 distclean clean:
 	-rm -f selinux/*~
+

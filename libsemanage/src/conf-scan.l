@@ -54,9 +54,7 @@ handle-unknown    return HANDLE_UNKNOWN;
 bzip-blocksize	return BZIP_BLOCKSIZE;
 bzip-small	return BZIP_SMALL;
 remove-hll	return REMOVE_HLL;
-relabel_store	return RELABEL_STORE;
 optimize-policy return OPTIMIZE_POLICY;
-multiple-decls return MULTIPLE_DECLS;
 "[load_policy]"   return LOAD_POLICY_START;
 "[setfiles]"      return SETFILES_START;
 "[sefcontext_compile]"      return SEFCONTEXT_COMPILE_START;
@@ -80,11 +78,11 @@ args              return PROG_ARGS;
  * Returns NULL on error. */
 static char *my_strdup(char *s) {
 	char *t;
-	while (isspace((unsigned char)*s)) {
+	while (isspace(*s)) {
 		s++;
 	}
 	t = s + strlen(s) - 1;
-	while (t >= s && isspace((unsigned char)*t)) {
+	while (t >= s && isspace(*t)) {
 		*t = '\0';
 		t--;
 	}
