@@ -18,9 +18,10 @@ int getpeercon_raw(int fd, char ** context)
 	ssize_t ret;
 
 	size = INITCONTEXTLEN + 1;
-	buf = calloc(1, size);
+	buf = malloc(size);
 	if (!buf)
 		return -1;
+	memset(buf, 0, size);
 
 	ret = getsockopt(fd, SOL_SOCKET, SO_PEERSEC, buf, &size);
 	if (ret < 0 && errno == ERANGE) {

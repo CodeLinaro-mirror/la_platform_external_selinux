@@ -40,13 +40,11 @@ int semanage_iface_compare2(const semanage_iface_t * iface,
 }
 
 
-static int semanage_iface_compare2_qsort(const void *p1,
-					 const void *p2)
+static int semanage_iface_compare2_qsort(const semanage_iface_t ** iface,
+					 const semanage_iface_t ** iface2)
 {
-	const semanage_iface_t *const *iface1 = p1;
-	const semanage_iface_t *const *iface2 = p2;
 
-	return sepol_iface_compare2(*iface1, *iface2);
+	return sepol_iface_compare2(*iface, *iface2);
 }
 
 int semanage_iface_key_create(semanage_handle_t * handle,
@@ -146,7 +144,7 @@ void semanage_iface_free(semanage_iface_t * iface)
 
 
 /* Record base functions */
-const record_table_t SEMANAGE_IFACE_RTABLE = {
+record_table_t SEMANAGE_IFACE_RTABLE = {
 	.create = semanage_iface_create,
 	.key_extract = semanage_iface_key_extract,
 	.key_free = semanage_iface_key_free,

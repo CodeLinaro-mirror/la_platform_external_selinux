@@ -50,4 +50,7 @@ clean:
 	-rm -f seunshare *.o *~
 	(cd po && $(MAKE) $@)
 
+indent:
+	../../scripts/Lindent $(wildcard *.[ch])
+
 relabel:

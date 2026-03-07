@@ -43,27 +43,27 @@ int security_compute_user_raw(const char * scon,
 	if (ret < 0 || (size_t)ret >= size) {
 		errno = EOVERFLOW;
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 
 	ret = write(fd, buf, strlen(buf));
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	memset(buf, 0, size);
 	ret = read(fd, buf, size - 1);
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	if (sscanf(buf, "%u", &nel) != 1) {
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 
 	ary = malloc((nel + 1) * sizeof(char *));
 	if (!ary) {
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 
 	ptr = buf + strlen(buf) + 1;
@@ -72,15 +72,16 @@ int security_compute_user_raw(const char * scon,
 		if (!ary[i]) {
 			freeconary(ary);
 			ret = -1;
-			goto out;
+			goto out2;
 		}
 		ptr += strlen(ptr) + 1;
 	}
 	ary[nel] = NULL;
 	*con = ary;
 	ret = 0;
-      out:
+      out2:
 	free(buf);
+      out:
 	close(fd);
 	return ret;
 }

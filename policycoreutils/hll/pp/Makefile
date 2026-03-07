@@ -25,3 +25,6 @@ relabel:
 
 clean:
 	-rm -f pp $(PP_OBJS)
+
+indent:
+	../../scripts/Lindent $(wildcard *.[ch])

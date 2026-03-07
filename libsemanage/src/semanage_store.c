@@ -66,6 +66,8 @@ typedef struct dbase_policydb dbase_t;
 /* relative path names to enum semanage_paths to special files and
  * directories for the module store */
 
+#define TRUE 1
+
 enum semanage_file_defs {
 	SEMANAGE_ROOT,
 	SEMANAGE_TRANS_LOCK,
@@ -78,13 +80,13 @@ static char *semanage_files[SEMANAGE_NUM_FILES] = { NULL };
 static int semanage_paths_initialized = 0;
 
 /* These are paths relative to the bottom of the module store */
-static const char *const semanage_relative_files[SEMANAGE_NUM_FILES] = {
+static const char *semanage_relative_files[SEMANAGE_NUM_FILES] = {
 	"",
 	"/semanage.trans.LOCK",
 	"/semanage.read.LOCK"
 };
 
-static const char *const semanage_store_paths[SEMANAGE_NUM_STORES] = {
+static const char *semanage_store_paths[SEMANAGE_NUM_STORES] = {
 	"/active",
 	"/previous",
 	"/tmp"
@@ -92,7 +94,7 @@ static const char *const semanage_store_paths[SEMANAGE_NUM_STORES] = {
 
 /* relative path names to enum sandbox_paths for special files within
  * a sandbox */
-static const char *const semanage_sandbox_paths[SEMANAGE_STORE_NUM_PATHS] = {
+static const char *semanage_sandbox_paths[SEMANAGE_STORE_NUM_PATHS] = {
 	"",
 	"/modules",
 	"/policy.linked",
@@ -137,10 +139,10 @@ typedef struct semanage_file_context_node {
 	char *path;
 	char *file_type;
 	char *context;
-	size_t path_len;
-	size_t effective_len;
-	size_t type_len;
-	size_t context_len;
+	int path_len;
+	int effective_len;
+	int type_len;
+	int context_len;
 	int meta;		/* position of first meta char in path, -1 if none */
 	struct semanage_file_context_node *next;
 } semanage_file_context_node_t;
@@ -165,42 +167,54 @@ typedef struct semanage_netfilter_context_node {
  */
 static int semanage_init_paths(const char *root)
 {
+	size_t len, prefix_len;
 	int i;
 
 	if (!root)
 		return -1;
 
+	prefix_len = strlen(root);
+
 	for (i = 0; i < SEMANAGE_NUM_FILES; i++) {
-		if (asprintf(&semanage_files[i], "%s%s",
-			     root, semanage_relative_files[i]) < 0) {
-			semanage_files[i] = NULL;
+		len = (strlen(semanage_relative_files[i]) + prefix_len);
+		semanage_files[i] = calloc(len + 1, sizeof(char));
+		if (!semanage_files[i])
 			return -1;
-		}
+		sprintf(semanage_files[i], "%s%s", root,
+			semanage_relative_files[i]);
 	}
 
 	return 0;
 }
 
-/* This initializes the paths inside the stores, this is only necessary
+/* This initializes the paths inside the stores, this is only necessary 
  * when directly accessing the store
  */
 static int semanage_init_store_paths(const char *root)
 {
 	int i, j;
+	size_t len;
+	size_t prefix_len;
 
 	if (!root)
 		return -1;
 
+	prefix_len = strlen(root);
+
 	for (i = 0; i < SEMANAGE_NUM_STORES; i++) {
 		for (j = 0; j < SEMANAGE_STORE_NUM_PATHS; j++) {
-			if (asprintf(&semanage_paths[i][j], "%s%s%s",
-				     root, semanage_store_paths[i], semanage_sandbox_paths[j]) < 0) {
-				semanage_paths[i][j] = NULL;
-				return -1;
-			}
+			len = prefix_len + strlen(semanage_store_paths[i])
+			    + strlen(semanage_sandbox_paths[j]);
+			semanage_paths[i][j] = calloc(len + 1, sizeof(char));
+			if (!semanage_paths[i][j])
+				goto cleanup;
+			sprintf(semanage_paths[i][j], "%s%s%s", root,
+				semanage_store_paths[i],
+				semanage_sandbox_paths[j]);
 		}
 	}
 
+      cleanup:
 	return 0;
 }
 
@@ -210,25 +224,47 @@ static int semanage_init_final(semanage_handle_t *sh, const char *prefix)
 	assert(prefix);
 
 	int status = 0;
+	size_t len;
 	const char *store_path = sh->conf->store_path;
+	size_t store_len = strlen(store_path);
 
 	/* SEMANAGE_FINAL_TMP */
-	if (asprintf(&semanage_final[SEMANAGE_FINAL_TMP], "%s%s%s/%s",
-		     semanage_root(), prefix,
-		     semanage_final_prefix[SEMANAGE_FINAL_TMP], store_path) < 0) {
-		semanage_final[SEMANAGE_FINAL_TMP] = NULL;
+	len = strlen(semanage_root()) +
+	      strlen(prefix) +
+	      strlen("/") +
+	      strlen(semanage_final_prefix[SEMANAGE_FINAL_TMP]) +
+	      store_len;
+	semanage_final[SEMANAGE_FINAL_TMP] = malloc(len + 1);
+	if (semanage_final[SEMANAGE_FINAL_TMP] == NULL) {
 		status = -1;
 		goto cleanup;
 	}
 
+	sprintf(semanage_final[SEMANAGE_FINAL_TMP],
+		"%s%s%s/%s",
+		semanage_root(),
+		prefix,
+		semanage_final_prefix[SEMANAGE_FINAL_TMP],
+		store_path);
+
 	/* SEMANAGE_FINAL_SELINUX */
-	if (asprintf(&semanage_final[SEMANAGE_FINAL_SELINUX], "%s%s%s%s",
-		     semanage_root(), selinux_path(),
-		     semanage_final_prefix[SEMANAGE_FINAL_SELINUX], store_path) < 0) {
-		semanage_final[SEMANAGE_FINAL_SELINUX] = NULL;
+	const char *selinux_root = selinux_path();
+	len = strlen(semanage_root()) +
+	      strlen(selinux_root) +
+	      strlen(semanage_final_prefix[SEMANAGE_FINAL_SELINUX]) +
+	      store_len;
+	semanage_final[SEMANAGE_FINAL_SELINUX] = malloc(len + 1);
+	if (semanage_final[SEMANAGE_FINAL_SELINUX] == NULL) {
 		status = -1;
 		goto cleanup;
 	}
+
+	sprintf(semanage_final[SEMANAGE_FINAL_SELINUX],
+		"%s%s%s%s",
+		semanage_root(),
+		selinux_root,
+		semanage_final_prefix[SEMANAGE_FINAL_SELINUX],
+		store_path);
 
 cleanup:
 	if (status != 0) {
@@ -352,18 +388,24 @@ static int semanage_init_final_paths(semanage_handle_t *sh)
 {
 	int status = 0;
 	int i, j;
+	size_t len;
 
 	for (i = 0; i < SEMANAGE_FINAL_NUM; i++) {
 		for (j = 0; j < SEMANAGE_FINAL_PATH_NUM; j++) {
-			if (asprintf(&semanage_final_paths[i][j],
-				 "%s%s",
-				     semanage_final[i],
-				     semanage_final_suffix[j]) < 0) {
-				semanage_final_paths[i][j] = NULL;
+			len = 	  strlen(semanage_final[i])
+				+ strlen(semanage_final_suffix[j]);
+
+			semanage_final_paths[i][j] = malloc(len + 1);
+			if (semanage_final_paths[i][j] == NULL) {
 				ERR(sh, "Unable to allocate space for policy final path.");
 				status = -1;
 				goto cleanup;
-				}
+			}
+
+			sprintf(semanage_final_paths[i][j],
+				"%s%s",
+				semanage_final[i],
+				semanage_final_suffix[j]);
 		}
 	}
 
@@ -381,7 +423,7 @@ cleanup:
 }
 
 /* THIS MUST BE THE FIRST FUNCTION CALLED IN THIS LIBRARY.  If the
- * library has not been initialized yet then call the functions that
+ * library has nnot been initialized yet then call the functions that
  * initialize the path variables.  This function does nothing if it
  * was previously called and that call was successful.  Return 0 on
  * success, -1 on error.
@@ -474,7 +516,7 @@ const char *semanage_final_path(enum semanage_final_defs store,
 char *semanage_conf_path(void)
 {
 	char *semanage_conf = NULL;
-	size_t len;
+	int len;
 	struct stat sb;
 
 	len = strlen(semanage_root()) + strlen(selinux_path()) + strlen(SEMANAGE_CONF_FILE);
@@ -489,45 +531,6 @@ char *semanage_conf_path(void)
 	}
 
 	return semanage_conf;
-}
-
-/* Recursively create a directory from a path string.
- * Returns 0 on success, -errno on failure.
- */
-static int mkdir_recursive(const char *path, mode_t mode)
-{
-	if (!path || !*path) {
-		return -EINVAL;
-	}
-
-	char path_buffer[PATH_MAX] = {0};
-	size_t len = strlen(path);
-	/* + 1 for nullterm.  */
-	if (len + 1 > sizeof(path_buffer)) {
-		return -ENAMETOOLONG;
-	}
-
-	/* + 1 for nullterm.  */
-	memcpy(path_buffer, path, len + 1);
-
-	/* trim possible trailing slashes, except if '/' is the entire path.  */
-	while (len > 1 && path_buffer[len - 1] == '/') {
-		path_buffer[--len] = '\0';
-	}
-
-	for (char *pos = path_buffer + 1, *slash; (slash = strchr(pos, '/')); pos = slash + 1) {
-		*slash = '\0';
-		if (mkdir(path_buffer, mode) != 0 && errno != EEXIST) {
-			return -errno;
-		}
-		*slash = '/';
-	}
-
-	if (mkdir(path_buffer, mode) != 0 && errno != EEXIST) {
-		return -errno;
-	}
-
-	return 0;
 }
 
 /**************** functions that create module store ***************/
@@ -545,20 +548,14 @@ int semanage_create_store(semanage_handle_t * sh, int create)
 
 	if (stat(path, &sb) == -1) {
 		if (errno == ENOENT && create) {
-			/* First we create directories recursively with standard permissions so that
-			   we don't screw up ownership of toplevel dirs such as `/var` in pkgmgr
-			   environments.  */
-			const int r = mkdir_recursive(path, (mode_t)0755);
-			if (r != 0) {
-				ERR(sh, "Could not create module store at %s: %s.", path, strerror(-r));
+			mask = umask(0077);
+			if (mkdir(path, S_IRWXU) == -1) {
+				umask(mask);
+				ERR(sh, "Could not create module store at %s.",
+				    path);
 				return -2;
 			}
-			/* Now that we've created the directory tree, we set the permissions of the
-			   target path to 0700. */
-			if (chmod(path, (mode_t)0700) != 0) {
-				ERR(sh, "Failed to chown module store at %s: %s.", path, strerror(errno));
-				return -2;
-			}
+			umask(mask);
 		} else {
 			if (create)
 				ERR(sh,
@@ -574,8 +571,6 @@ int semanage_create_store(semanage_handle_t * sh, int create)
 			return -1;
 		}
 	}
-	/* We no longer need to use mkdir_recursive at this point: the toplevel
-	   directory hierarchy has been created by now.  */
 	path = semanage_path(SEMANAGE_ACTIVE, SEMANAGE_TOPLEVEL);
 	if (stat(path, &sb) == -1) {
 		if (errno == ENOENT && create) {
@@ -632,7 +627,7 @@ int semanage_create_store(semanage_handle_t * sh, int create)
 	if (stat(path, &sb) == -1) {
 		if (errno == ENOENT && create) {
 			mask = umask(0077);
-			if ((fd = open(path, O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR)) == -1) {
+			if ((fd = creat(path, S_IRUSR | S_IWUSR)) == -1) {
 				umask(mask);
 				ERR(sh, "Could not create lock file at %s.",
 				    path);
@@ -654,7 +649,7 @@ int semanage_create_store(semanage_handle_t * sh, int create)
 }
 
 /* returns <0 if the active store cannot be read or doesn't exist
- * 0 if the store exists but the lock file cannot be accessed
+ * 0 if the store exists but the lock file cannot be accessed 
  * SEMANAGE_CAN_READ if the store can be read and the lock file used
  * SEMANAGE_CAN_WRITE if the modules directory and binary policy dir can be written to
  */
@@ -703,7 +698,9 @@ int semanage_store_access_check(void)
 
 /********************* other I/O functions *********************/
 
-static int semanage_copy_dir_flags(semanage_handle_t * sh, const char *src, const char *dst, int flag);
+static int semanage_rename(semanage_handle_t * sh, const char *tmp, const char *dst);
+int semanage_remove_directory(const char *path);
+static int semanage_copy_dir_flags(const char *src, const char *dst, int flag);
 
 /* Callback used by scandir() to select files. */
 static int semanage_filename_select(const struct dirent *d)
@@ -717,8 +714,8 @@ static int semanage_filename_select(const struct dirent *d)
 
 /* Copies a file from src to dst.  If dst already exists then
  * overwrite it.  Returns 0 on success, -1 on error. */
-int semanage_copy_file(semanage_handle_t *sh, const char *src, const char *dst,
-		       mode_t mode, bool syncrequired)
+int semanage_copy_file(const char *src, const char *dst, mode_t mode,
+		bool syncrequired)
 {
 	int in, out, retval = 0, amount_read, n, errsv = errno;
 	char tmp[PATH_MAX];
@@ -729,15 +726,15 @@ int semanage_copy_file(semanage_handle_t *sh, const char *src, const char *dst,
 	if (n < 0 || n >= PATH_MAX)
 		return -1;
 
-	if ((in = open(src, O_RDONLY | O_CLOEXEC)) == -1) {
+	if ((in = open(src, O_RDONLY)) == -1) {
 		return -1;
 	}
 
 	if (!mode)
 		mode = S_IRUSR | S_IWUSR;
-
+	
 	mask = umask(0);
-	if ((out = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode)) == -1) {
+	if ((out = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, mode)) == -1) {
 		umask(mask);
 		errsv = errno;
 		close(in);
@@ -745,14 +742,13 @@ int semanage_copy_file(semanage_handle_t *sh, const char *src, const char *dst,
 		goto out;
 	}
 	umask(mask);
-	while ((amount_read = read(in, buf, sizeof(buf))) > 0) {
-		if (write_full(out, buf, amount_read) == -1) {
+	while (retval == 0 && (amount_read = read(in, buf, sizeof(buf))) > 0) {
+		if (write(out, buf, amount_read) != amount_read) {
 			if (errno)
 				errsv = errno;
 			else
 				errsv = EIO;
 			retval = -1;
-			break;
 		}
 	}
 	if (amount_read < 0) {
@@ -764,7 +760,7 @@ int semanage_copy_file(semanage_handle_t *sh, const char *src, const char *dst,
 		errsv = errno;
 		retval = -1;
 	}
-	if (close(out) < 0 && errno != EINTR) {
+	if (close(out) < 0) {
 		errsv = errno;
 		retval = -1;
 	}
@@ -772,7 +768,7 @@ int semanage_copy_file(semanage_handle_t *sh, const char *src, const char *dst,
 	if (!retval && rename(tmp, dst) == -1)
 		return -1;
 
-	semanage_setfiles(sh, dst);
+	semanage_setfiles(dst);
 out:
 	errno = errsv;
 	return retval;
@@ -786,9 +782,9 @@ static int semanage_rename(semanage_handle_t * sh, const char *src, const char *
 		return retval;
 
 	/* we can't use rename() due to filesystem limitation, lets try to copy files manually */
-	WARN(sh, "WARNING: rename(%s, %s) failed: %m, fall back to non-atomic semanage_copy_dir_flags()",
-		 src, dst);
-	if (semanage_copy_dir_flags(sh, src, dst, 1) == -1) {
+	WARN(sh, "WARNING: rename(%s, %s) failed: %s, fall back to non-atomic semanage_copy_dir_flags()",
+		 src, dst, strerror(errno));
+	if (semanage_copy_dir_flags(src, dst, 1) == -1) {
 		return -1;
 	}
 	return semanage_remove_directory(src);
@@ -796,24 +792,24 @@ static int semanage_rename(semanage_handle_t * sh, const char *src, const char *
 
 /* Copies all of the files from src to dst, recursing into
  * subdirectories.  Returns 0 on success, -1 on error. */
-static int semanage_copy_dir(semanage_handle_t * sh, const char *src, const char *dst)
+static int semanage_copy_dir(const char *src, const char *dst)
 {
-	return semanage_copy_dir_flags(sh, src, dst, 1);
+	return semanage_copy_dir_flags(src, dst, 1);
 }
 
 /* Copies all of the dirs from src to dst, recursing into
  * subdirectories. If flag == 1, then copy regular files as
  * well. Returns 0 on success, -1 on error. */
-static int semanage_copy_dir_flags(semanage_handle_t * sh, const char *src, const char *dst, int flag)
+static int semanage_copy_dir_flags(const char *src, const char *dst, int flag)
 {
-	int i, len = 0, rc, retval = -1;
+	int i, len = 0, retval = -1;
 	struct stat sb;
 	struct dirent **names = NULL;
 	char path[PATH_MAX], path2[PATH_MAX];
 	mode_t mask;
 
 	if ((len = scandir(src, &names, semanage_filename_select, NULL)) == -1) {
-		ERR(sh, "Could not read the contents of %s.", src);
+		fprintf(stderr, "Could not read the contents of %s: %s\n", src, strerror(errno));
 		return -1;
 	}
 
@@ -821,42 +817,34 @@ static int semanage_copy_dir_flags(semanage_handle_t * sh, const char *src, cons
 		mask = umask(0077);
 		if (mkdir(dst, S_IRWXU) != 0) {
 			umask(mask);
-			ERR(sh, "Could not create %s.", dst);
+			fprintf(stderr, "Could not create %s: %s\n", dst, strerror(errno));
 			goto cleanup;
 		}
 		umask(mask);
 
-		semanage_setfiles(sh, dst);
+		semanage_setfiles(dst);
 	}
 
 	for (i = 0; i < len; i++) {
-		rc = snprintf(path, sizeof(path), "%s/%s", src, names[i]->d_name);
-		if (rc < 0 || (size_t)rc >= sizeof(path)) {
-			errno = EOVERFLOW;
-			goto cleanup;
-		}
+		snprintf(path, sizeof(path), "%s/%s", src, names[i]->d_name);
 		/* stat() to see if this entry is a file or not since
 		 * d_type isn't set properly on XFS */
 		if (stat(path, &sb)) {
 			goto cleanup;
 		}
-		rc = snprintf(path2, sizeof(path2), "%s/%s", dst, names[i]->d_name);
-		if (rc < 0 || (size_t)rc >= sizeof(path2)) {
-			errno = EOVERFLOW;
-			goto cleanup;
-		}
+		snprintf(path2, sizeof(path2), "%s/%s", dst, names[i]->d_name);
 		if (S_ISDIR(sb.st_mode)) {
 			mask = umask(0077);
 			if (mkdir(path2, 0700) == -1 ||
-			    semanage_copy_dir_flags(sh, path, path2, flag) == -1) {
+			    semanage_copy_dir_flags(path, path2, flag) == -1) {
 				umask(mask);
 				goto cleanup;
 			}
 			umask(mask);
-			semanage_setfiles(sh, path2);
+			semanage_setfiles(path2);
 		} else if (S_ISREG(sb.st_mode) && flag == 1) {
 			mask = umask(0077);
-			if (semanage_copy_file(sh, path, path2, sb.st_mode,
+			if (semanage_copy_file(path, path2, sb.st_mode,
 						false) < 0) {
 				umask(mask);
 				goto cleanup;
@@ -878,7 +866,7 @@ static int semanage_copy_dir_flags(semanage_handle_t * sh, const char *src, cons
 int semanage_remove_directory(const char *path)
 {
 	struct dirent **namelist = NULL;
-	int num_entries, i, rc;
+	int num_entries, i;
 	if ((num_entries = scandir(path, &namelist, semanage_filename_select,
 				   NULL)) == -1) {
 		return -1;
@@ -886,11 +874,7 @@ int semanage_remove_directory(const char *path)
 	for (i = 0; i < num_entries; i++) {
 		char s[PATH_MAX];
 		struct stat buf;
-		rc = snprintf(s, sizeof(s), "%s/%s", path, namelist[i]->d_name);
-		if (rc < 0 || (size_t)rc >= sizeof(s)) {
-			errno = EOVERFLOW;
-			return -2;
-		}
+		snprintf(s, sizeof(s), "%s/%s", path, namelist[i]->d_name);
 		if (stat(s, &buf) == -1) {
 			return -2;
 		}
@@ -900,7 +884,7 @@ int semanage_remove_directory(const char *path)
 				return retval;
 			}
 		} else {
-			if (unlink(s) == -1) {
+			if (remove(s) == -1) {
 				return -3;
 			}
 		}
@@ -959,7 +943,7 @@ int semanage_mkdir(semanage_handle_t *sh, const char *path)
 
 		}
 		umask(mask);
-		semanage_setfiles(sh, path);
+		semanage_setfiles(path);
 	}
 	else {
 		/* check that it really is a directory */
@@ -1003,7 +987,7 @@ int semanage_make_sandbox(semanage_handle_t * sh)
 
 	mask = umask(0077);
 	if (mkdir(sandbox, S_IRWXU) == -1 ||
-	    semanage_copy_dir(sh, semanage_path(SEMANAGE_ACTIVE, SEMANAGE_TOPLEVEL),
+	    semanage_copy_dir(semanage_path(SEMANAGE_ACTIVE, SEMANAGE_TOPLEVEL),
 			      sandbox) == -1) {
 		umask(mask);
 		ERR(sh, "Could not copy files to sandbox %s.", sandbox);
@@ -1078,8 +1062,8 @@ cleanup:
 /* qsort comparison function for semanage_get_active_modules. */
 static int semanage_get_active_modules_cmp(const void *a, const void *b)
 {
-	const semanage_module_info_t *aa = (const semanage_module_info_t *)a;
-	const semanage_module_info_t *bb = (const semanage_module_info_t *)b;
+	semanage_module_info_t *aa = (semanage_module_info_t *)a;
+	semanage_module_info_t *bb = (semanage_module_info_t *)b;
 
 	return strcmp(aa->name, bb->name);
 }
@@ -1159,7 +1143,7 @@ int semanage_get_active_modules(semanage_handle_t * sh,
 	int j = 0;
 
 	semanage_list_t *list = NULL;
-	const semanage_list_t *found = NULL;
+	semanage_list_t *found = NULL;
 
 	semanage_module_info_t *all_modinfos = NULL;
 	int all_modinfos_len = 0;
@@ -1429,7 +1413,7 @@ static char **split_args(const char *arg0, char *arg_string,
 				break;
 			}
 		default:{
-				if (isspace((unsigned char)*s) && !in_quote && !in_dquote) {
+				if (isspace(*s) && !in_quote && !in_dquote) {
 					if (arg != NULL) {
 						rc = append_arg(&argv, &num_args, arg);
 						if (rc)
@@ -1512,7 +1496,7 @@ static int semanage_exec_prog(semanage_handle_t * sh,
 	return WEXITSTATUS(status);
 }
 
-/* reloads the policy pointed to by the handle, used locally by install
+/* reloads the policy pointed to by the handle, used locally by install 
  * and exported for user reload requests */
 int semanage_reload_policy(semanage_handle_t * sh)
 {
@@ -1536,7 +1520,7 @@ int semanage_split_fc(semanage_handle_t * sh)
 	char buf[PATH_MAX] = { 0 };
 
 	/* I use fopen here instead of open so that I can use fgets which only reads a single line */
-	file_con = fopen(semanage_path(SEMANAGE_TMP, SEMANAGE_FC_TMPL), "re");
+	file_con = fopen(semanage_path(SEMANAGE_TMP, SEMANAGE_FC_TMPL), "r");
 	if (!file_con) {
 		ERR(sh, "Could not open %s for reading.",
 		    semanage_path(SEMANAGE_TMP, SEMANAGE_FC_TMPL));
@@ -1544,14 +1528,14 @@ int semanage_split_fc(semanage_handle_t * sh)
 	}
 
 	fc = open(semanage_path(SEMANAGE_TMP, SEMANAGE_STORE_FC),
-		  O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR);
+		  O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
 	if (fc < 0) {
 		ERR(sh, "Could not open %s for writing.",
 		    semanage_path(SEMANAGE_TMP, SEMANAGE_STORE_FC));
 		goto cleanup;
 	}
 	hd = open(semanage_path(SEMANAGE_TMP, SEMANAGE_HOMEDIR_TMPL),
-		  O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR);
+		  O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
 	if (hd < 0) {
 		ERR(sh, "Could not open %s for writing.",
 		    semanage_path(SEMANAGE_TMP, SEMANAGE_HOMEDIR_TMPL));
@@ -1563,14 +1547,14 @@ int semanage_split_fc(semanage_handle_t * sh)
 		    !strncmp(buf, "HOME_ROOT", 9) || strstr(buf, "ROLE") ||
 		    strstr(buf, "USER")) {
 			/* This contains one of the template variables, write it to homedir.template */
-			if (write_full(hd, buf, strlen(buf)) < 0) {
+			if (write(hd, buf, strlen(buf)) < 0) {
 				ERR(sh, "Write to %s failed.",
 				    semanage_path(SEMANAGE_TMP,
 						  SEMANAGE_HOMEDIR_TMPL));
 				goto cleanup;
 			}
 		} else {
-			if (write_full(fc, buf, strlen(buf)) < 0) {
+			if (write(fc, buf, strlen(buf)) < 0) {
 				ERR(sh, "Write to %s failed.",
 				    semanage_path(SEMANAGE_TMP, SEMANAGE_STORE_FC));
 				goto cleanup;
@@ -1583,11 +1567,9 @@ int semanage_split_fc(semanage_handle_t * sh)
 	if (file_con)
 		fclose(file_con);
 	if (fc >= 0)
-		if (close(fc) == -1 && errno != EINTR)
-			retval = -1;
+		close(fc);
 	if (hd >= 0)
-		if (close(hd) == -1 && errno != EINTR)
-			retval = -1;
+		close(hd);
 
 	return retval;
 
@@ -1600,7 +1582,7 @@ static int sefcontext_compile(semanage_handle_t * sh, const char *path) {
 
 	if (stat(path, &sb) < 0) {
 		if (errno != ENOENT) {
-			ERR(sh, "Unable to access %s.", path);
+			ERR(sh, "Unable to access %s: %s\n", path, strerror(errno));
 			return -1;
 		}
 
@@ -1638,19 +1620,19 @@ static int semanage_validate_and_compile_fcontexts(semanage_handle_t * sh)
 		    semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC)) != 0) {
 		goto cleanup;
 	}
-	semanage_setfiles(sh, semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_BIN));
+	semanage_setfiles(semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_BIN));
 
 	if (sefcontext_compile(sh,
 		    semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_LOCAL)) != 0) {
 		goto cleanup;
 	}
-	semanage_setfiles(sh, semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_LOCAL_BIN));
+	semanage_setfiles(semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_LOCAL_BIN));
 
 	if (sefcontext_compile(sh,
 		    semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_HOMEDIRS)) != 0) {
 		goto cleanup;
 	}
-	semanage_setfiles(sh, semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_HOMEDIRS_BIN));
+	semanage_setfiles(semanage_final_path(SEMANAGE_FINAL_TMP, SEMANAGE_FC_HOMEDIRS_BIN));
 
 	status = 0;
 cleanup:
@@ -1695,7 +1677,7 @@ static int semanage_install_final_tmp(semanage_handle_t * sh)
 			goto cleanup;
 		}
 
-		ret = semanage_copy_file(sh, src, dst, sh->conf->file_mode,
+		ret = semanage_copy_file(src, dst, sh->conf->file_mode,
 					true);
 		if (ret < 0) {
 			ERR(sh, "Could not copy %s to %s.", src, dst);
@@ -1759,7 +1741,6 @@ static int semanage_commit_sandbox(semanage_handle_t * sh)
 	    semanage_path(SEMANAGE_PREVIOUS, SEMANAGE_TOPLEVEL);
 	const char *sandbox = semanage_path(SEMANAGE_TMP, SEMANAGE_TOPLEVEL);
 	struct stat buf;
-	struct selabel_handle *sehandle;
 
 	/* update the commit number */
 	if ((commit_number = semanage_direct_get_serial(sh)) < 0) {
@@ -1769,33 +1750,29 @@ static int semanage_commit_sandbox(semanage_handle_t * sh)
 	memset(write_buf, 0, sizeof(write_buf));
 	snprintf(write_buf, sizeof(write_buf), "%d", commit_number);
 	if ((fd =
-	     open(commit_filename, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+	     open(commit_filename, O_WRONLY | O_CREAT | O_TRUNC,
 		  S_IRUSR | S_IWUSR)) == -1) {
 		ERR(sh, "Could not open commit number file %s for writing.",
 		    commit_filename);
 		return -1;
 	}
-	amount_written = write_full(fd, write_buf, sizeof(write_buf));
+	amount_written = write(fd, write_buf, sizeof(write_buf));
 	if (amount_written == -1) {
 		ERR(sh, "Error while writing commit number to %s.",
 		    commit_filename);
 		close(fd);
 		return -1;
 	}
-	if (close(fd) == -1 && errno != EINTR) {
-		ERR(sh, "Error while closing commit number file %s.",
-		    commit_filename);
-		return -1;
-	}
+	close(fd);
 
 	/* sync changes in sandbox to filesystem */
-	fd = open(sandbox, O_DIRECTORY | O_CLOEXEC);
+	fd = open(sandbox, O_DIRECTORY);
 	if (fd == -1) {
-		ERR(sh, "Error while opening %s for syncfs().", sandbox);
+		ERR(sh, "Error while opening %s for syncfs(): %d", sandbox, errno);
 		return -1;
 	}
 	if (syncfs(fd) == -1) {
-		ERR(sh, "Error while syncing %s to filesystem.", sandbox);
+		ERR(sh, "Error while syncing %s to filesystem: %d", sandbox, errno);
 		close(fd);
 		return -1;
 	}
@@ -1870,11 +1847,6 @@ static int semanage_commit_sandbox(semanage_handle_t * sh)
 
       cleanup:
 	semanage_release_active_lock(sh);
-
-	if (sh->conf->relabel_store) {
-		sehandle = selinux_restorecon_default_handle();
-		selinux_restorecon_set_sehandle(sehandle);
-	}
 	return retval;
 }
 
@@ -1927,12 +1899,14 @@ static int semanage_get_lock(semanage_handle_t * sh,
 	struct timeval origtime, curtime;
 	int got_lock = 0;
 
-	if ((fd =
-	     open(lock_file, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC,
-		  S_IRUSR | S_IWUSR)) == -1) {
-		ERR(sh, "Could not open direct %s at %s.", lock_name,
-		    lock_file);
-		return -1;
+	if ((fd = open(lock_file, O_RDONLY)) == -1) {
+		if ((fd =
+		     open(lock_file, O_RDWR | O_CREAT | O_TRUNC,
+			  S_IRUSR | S_IWUSR)) == -1) {
+			ERR(sh, "Could not open direct %s at %s.", lock_name,
+			    lock_file);
+			return -1;
+		}
 	}
 	if (fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
 		ERR(sh, "Could not set close-on-exec for %s at %s.", lock_name,
@@ -2072,7 +2046,7 @@ int semanage_direct_get_serial(semanage_handle_t * sh)
 		    semanage_path(SEMANAGE_ACTIVE, SEMANAGE_COMMIT_NUM_FILE);
 	}
 
-	if ((fd = open(commit_filename, O_RDONLY | O_CLOEXEC)) == -1) {
+	if ((fd = open(commit_filename, O_RDONLY)) == -1) {
 		if (errno == ENOENT) {
 			/* the commit number file does not exist yet,
 			 * so assume that the number is 0 */
@@ -2109,8 +2083,8 @@ int semanage_direct_get_serial(semanage_handle_t * sh)
 
 int semanage_load_files(semanage_handle_t * sh, cil_db_t *cildb, char **filenames, int numfiles)
 {
-	int i, retval;
-	const char *filename;
+	int i, retval = 0;
+	char *filename;
 	struct file_contents contents = {};
 
 	for (i = 0; i < numfiles; i++) {
@@ -2132,8 +2106,8 @@ int semanage_load_files(semanage_handle_t * sh, cil_db_t *cildb, char **filename
 	return 0;
 }
 
-/*
- * Expands the policy contained within *base
+/* 
+ * Expands the policy contained within *base 
  */
 
 /**
@@ -2152,7 +2126,7 @@ int semanage_read_policydb(semanage_handle_t * sh, sepol_policydb_t * in,
 	     semanage_path(SEMANAGE_ACTIVE, file)) == NULL) {
 		goto cleanup;
 	}
-	if ((infile = fopen(kernel_filename, "re")) == NULL) {
+	if ((infile = fopen(kernel_filename, "r")) == NULL) {
 		ERR(sh, "Could not open kernel policy %s for reading.",
 		    kernel_filename);
 		goto cleanup;
@@ -2195,7 +2169,7 @@ int semanage_write_policydb(semanage_handle_t * sh, sepol_policydb_t * out,
 	     semanage_path(SEMANAGE_TMP, file)) == NULL) {
 		goto cleanup;
 	}
-	if ((outfile = fopen(kernel_filename, "wbe")) == NULL) {
+	if ((outfile = fopen(kernel_filename, "wb")) == NULL) {
 		ERR(sh, "Could not open kernel policy %s for writing.",
 		    kernel_filename);
 		goto cleanup;
@@ -2216,9 +2190,7 @@ int semanage_write_policydb(semanage_handle_t * sh, sepol_policydb_t * out,
 
       cleanup:
 	if (outfile != NULL) {
-		if (fclose(outfile) != 0 && errno != EINTR) {
-			retval = STATUS_ERR;
-		}
+		fclose(outfile);
 	}
 	umask(mask);
 	sepol_policy_file_free(pf);
@@ -2231,16 +2203,17 @@ int semanage_write_policydb(semanage_handle_t * sh, sepol_policydb_t * out,
 int semanage_verify_modules(semanage_handle_t * sh,
 			    char **module_filenames, int num_modules)
 {
-	int i;
+	int i, retval;
 	semanage_conf_t *conf = sh->conf;
 	if (conf->mod_prog == NULL) {
 		return 0;
 	}
 	for (i = 0; i < num_modules; i++) {
-		const char *module = module_filenames[i];
+		char *module = module_filenames[i];
 		external_prog_t *e;
 		for (e = conf->mod_prog; e != NULL; e = e->next) {
-			if (semanage_exec_prog(sh, e, module, "$<") != 0) {
+			if ((retval =
+			     semanage_exec_prog(sh, e, module, "$<")) != 0) {
 				return -1;
 			}
 		}
@@ -2318,7 +2291,7 @@ static void semanage_fc_node_list_destroy(semanage_file_context_node_t * x)
 	}
 }
 
-/* Free the linked list of buckets (and their node lists)
+/* Free the linked list of buckets (and their node lists) 
  * starting at the given bucket. */
 static void semanage_fc_bucket_list_destroy(semanage_file_context_bucket_t * x)
 {
@@ -2346,12 +2319,12 @@ static void semanage_fc_bucket_list_destroy(semanage_file_context_bucket_t * x)
  *      -> a is less specific than b.
  *     If a does not have a specified type and b does not,
  *      -> a is less specific than b.
- * FIXME: These heuristics are imperfect, but good enough for
+ * FIXME: These heuristics are imperfect, but good enough for 
  * now.  A proper comparison would determine which (if either)
  * regular expression is a subset of the other.
  */
-static int semanage_fc_compare(const semanage_file_context_node_t * a,
-			       const semanage_file_context_node_t * b)
+static int semanage_fc_compare(semanage_file_context_node_t * a,
+			       semanage_file_context_node_t * b)
 {
 	int a_has_meta = (a->meta >= 0);
 	int b_has_meta = (b->meta >= 0);
@@ -2384,13 +2357,13 @@ static int semanage_fc_compare(const semanage_file_context_node_t * a,
 	if (!b->file_type && a->file_type)
 		return 1;
 
-	/* If none of the above conditions were satisfied,
+	/* If none of the above conditions were satisfied, 
 	 * then a and b are equally specific. */
 	return 0;
 }
 
 /* Merges two sorted file context linked lists into a single sorted one.
- * The left list is assumed to represent nodes that came first in the original ordering.
+ * The left list is assumed to represent nodes that came first in the original ordering. 
  * The final sorted list is returned.
  */
 static semanage_file_context_node_t
@@ -2442,9 +2415,9 @@ static semanage_file_context_node_t
  *  This is a stable implementation of an iterative merge sort.
  *  Each bucket initially has a linked list of file contexts
  *   that are 1 node long.
- *  Each pass, buckets (and the nodes they contain) are merged
+ *  Each pass, buckets (and the nodes they contain) are merged 
  *   two at time.
- *  Buckets are merged until there is only one bucket left,
+ *  Buckets are merged until there is only one bucket left, 
  *   containing the list of file contexts, sorted.
  */
 static void semanage_fc_merge_sort(semanage_file_context_bucket_t * main)
@@ -2457,9 +2430,9 @@ static void semanage_fc_merge_sort(semanage_file_context_bucket_t * main)
 	while (main->next) {
 		current = main;
 
-		/* Merge buckets two-by-two.
-		 * If there is an odd number of buckets, the last
-		 * bucket will be left alone, which corresponds
+		/* Merge buckets two-by-two. 
+		 * If there is an odd number of buckets, the last 
+		 * bucket will be left alone, which corresponds 
 		 * to the operation of merging it with an empty bucket. */
 		while (current) {
 			if (current->next) {
@@ -2471,7 +2444,7 @@ static void semanage_fc_merge_sort(semanage_file_context_bucket_t * main)
 
 				/* Free the (now empty) second bucket.
 				 * (This does not touch the node list
-				 * in the bucket because it has been
+				 * in the bucket because it has been 
 				 * shifted over to the first bucket. */
 				free(temp);
 			}
@@ -2480,8 +2453,8 @@ static void semanage_fc_merge_sort(semanage_file_context_bucket_t * main)
 	}
 }
 
-/* Compute the location of the first regular expression
- *   meta character in the path of the given node, if it exists.
+/* Compute the location of the first regular expression 
+ *   meta character in the path of the given node, if it exists. 
  * On return:
  *     fc_node->meta = position of meta character, if it exists
  *			(-1 corresponds to no character)
@@ -2542,7 +2515,7 @@ static char *semanage_strnchr(const char *buf, size_t buf_len, char c)
 }
 
 /* Returns a pointer to the end of line character in the given buffer.
- * Used in the context of a file context char buffer that we will be
+ * Used in the context of a file context char buffer that we will be 
  * parsing and sorting.
  */
 static char *semanage_get_line_end(const char *buf, size_t buf_len)
@@ -2567,7 +2540,7 @@ static char *semanage_get_line_end(const char *buf, size_t buf_len)
  *  Returns 0 on success, -1 on failure.
  *  Allocates a buffer pointed to by sorted_buf that contains the sorted lines.
  *  sorted_buf_len is set to the size of this buffer.
- *  This buffer is guaranteed to have a final \0 character.
+ *  This buffer is guaranteed to have a final \0 character. 
  *  This buffer must be released by the caller.
  */
 int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
@@ -2586,6 +2559,8 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 	semanage_file_context_bucket_t *main;
 	semanage_file_context_bucket_t *bcurrent;
 
+	i = 0;
+
 	if (sh == NULL) {
 		return -1;
 	}
@@ -2598,7 +2573,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 		return -1;
 	}
 
-	/* Initialize the head of the linked list
+	/* Initialize the head of the linked list 
 	 * that will contain a node for each file context line. */
 	head = current =
 	    (semanage_file_context_node_t *) calloc(1,
@@ -2630,7 +2605,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 		/* Skip the whitespace at the front of the line. */
 		for (i = 0; i < line_len; i++) {
-			if (!isspace((unsigned char)line_buf[i]))
+			if (!isspace(line_buf[i]))
 				break;
 		}
 
@@ -2662,13 +2637,13 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 		escape_chars = 0;
 		just_saw_escape = 0;
 		start = i;
-		while (i < line_len && (!isspace((unsigned char)line_buf[i]))) {
+		while (i < line_len && (!isspace(line_buf[i]))) {
 			if (line_buf[i] == '\\') {
 				if (!just_saw_escape) {
 					escape_chars++;
 					just_saw_escape = 1;
 				} else {
-					/* We're looking at an escaped
+					/* We're looking at an escaped 
 					   escape. Reset our flag. */
 					just_saw_escape = 0;
 				}
@@ -2688,7 +2663,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 			continue;
 		}
 
-		temp->path = strndup(&line_buf[start], regex_len);
+		temp->path = (char *)strndup(&line_buf[start], regex_len);
 		if (!temp->path) {
 			ERR(sh, "Failure allocating memory.");
 			semanage_fc_node_destroy(temp);
@@ -2698,7 +2673,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 		/* Skip the whitespace after the regular expression. */
 		for (; i < line_len; i++) {
-			if (!isspace((unsigned char)line_buf[i]))
+			if (!isspace(line_buf[i]))
 				break;
 		}
 		if (i == line_len) {
@@ -2723,7 +2698,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 			/* Record the inode type. */
 			temp->file_type =
-			    strndup(&line_buf[i], type_len);
+			    (char *)strndup(&line_buf[i], type_len);
 			if (!temp->file_type) {
 				ERR(sh, "Failure allocating memory.");
 				semanage_fc_node_destroy(temp);
@@ -2735,7 +2710,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 			/* Skip the whitespace after the type. */
 			for (; i < line_len; i++) {
-				if (!isspace((unsigned char)line_buf[i]))
+				if (!isspace(line_buf[i]))
 					break;
 			}
 			if (i == line_len) {
@@ -2751,12 +2726,12 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 		/* Extract the context from the line. */
 		start = i;
-		while (i < line_len && (!isspace((unsigned char)line_buf[i])))
+		while (i < line_len && (!isspace(line_buf[i])))
 			i++;
 		finish = i;
 		context_len = finish - start;
 
-		temp->context = strndup(&line_buf[start], context_len);
+		temp->context = (char *)strndup(&line_buf[start], context_len);
 		if (!temp->context) {
 			ERR(sh, "Failure allocating memory.");
 			semanage_fc_node_destroy(temp);
@@ -2817,7 +2792,7 @@ int semanage_fc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 	/* Sort the bucket list. */
 	semanage_fc_merge_sort(main);
 
-	/* First, calculate how much space we'll need for
+	/* First, calculate how much space we'll need for 
 	 * the newly sorted block of data.  (We don't just
 	 * use buf_len for this because we have extracted
 	 * comments and whitespace.) */
@@ -2905,7 +2880,7 @@ static void semanage_nc_destroy_ruletab(semanage_netfilter_context_node_t *
  *  Returns 0 on success, -1 on failure.
  *  Allocates a buffer pointed to by sorted_buf that contains the sorted lines.
  *  sorted_buf_len is set to the size of this buffer.
- *  This buffer is guaranteed to have a final \0 character.
+ *  This buffer is guaranteed to have a final \0 character. 
  *  This buffer must be released by the caller.
  */
 int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
@@ -2914,7 +2889,7 @@ int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 	/* parsing bits */
 	const char *priority_names[] = NC_SORT_NAMES;
-	const size_t priority_names_len[] = NC_SORT_NAMES_LEN;
+	const int priority_names_len[] = NC_SORT_NAMES_LEN;
 	size_t line_len, buf_remainder, i, offset;
 	const char *line_buf, *line_end;
 
@@ -2946,7 +2921,7 @@ int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 
 		/* Skip the whitespace at the front of the line. */
 		for (i = 0; i < line_len; i++) {
-			if (!isspace((unsigned char)line_buf[i]))
+			if (!isspace(line_buf[i]))
 				break;
 		}
 
@@ -2982,7 +2957,7 @@ int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 		}
 
 		/* skip over whitespace */
-		for (; offset < line_len && isspace((unsigned char)line_buf[offset]);
+		for (; offset < line_len && isspace(line_buf[offset]);
 		     offset++) ;
 
 		/* load rule into node */
@@ -2995,7 +2970,7 @@ int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 		}
 
 		node->rule =
-		    strndup(line_buf + offset, line_len - offset);
+		    (char *)strndup(line_buf + offset, line_len - offset);
 		node->rule_len = line_len - offset;
 		node->next = NULL;
 
@@ -3019,7 +2994,7 @@ int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 		line_buf = line_end + 1;
 	}
 
-	/* First, calculate how much space we'll need for
+	/* First, calculate how much space we'll need for 
 	 * the newly sorted block of data.  (We don't just
 	 * use buf_len for this because we have extracted
 	 * comments and whitespace.)  Start at 1 for trailing \0 */
@@ -3053,39 +3028,24 @@ int semanage_nc_sort(semanage_handle_t * sh, const char *buf, size_t buf_len,
 	return 0;
 }
 
-/* log_callback muting all logs */
-static int __attribute__ ((format(printf, 2, 3)))
-log_callback_mute(__attribute__((unused)) int type, __attribute__((unused)) const char *fmt, ...)
-{
-	return 0;
-}
-
 /* Make sure the file context and ownership of files in the policy
  * store does not change */
-void semanage_setfiles(semanage_handle_t * sh, const char *path){
+void semanage_setfiles(const char *path){
 	struct stat sb;
 	int fd;
-
-	union selinux_callback cb_orig = selinux_get_callback(SELINUX_CB_LOG);
-	union selinux_callback cb = { .func_log = log_callback_mute };
-
-	/* Mute all logs */
-	selinux_set_callback(SELINUX_CB_LOG, cb);
-
 	/* Fix the user and role portions of the context, ignore errors
 	 * since this is not a critical operation */
 	selinux_restorecon(path, SELINUX_RESTORECON_SET_SPECFILE_CTX | SELINUX_RESTORECON_IGNORE_NOENTRY);
-	/* restore log_logging */
-	selinux_set_callback(SELINUX_CB_LOG, cb_orig);
+
 	/* Make sure "path" is owned by root */
 	if ((geteuid() != 0 || getegid() != 0) &&
-	    ((fd = open(path, O_RDONLY | O_CLOEXEC)) != -1)){
+	    ((fd = open(path, O_RDONLY)) != -1)){
 		/* Skip files with the SUID or SGID bit set -- abuse protection */
 		if ((fstat(fd, &sb) != -1) &&
 		    !(S_ISREG(sb.st_mode) &&
 		      (sb.st_mode & (S_ISUID | S_ISGID))) &&
 		    (fchown(fd, 0, 0) == -1))
-			ERR(sh, "Warning! Could not set ownership of %s to root", path);
+			fprintf(stderr, "Warning! Could not set ownership of %s to root\n", path);
 
 		close(fd);
 	}
