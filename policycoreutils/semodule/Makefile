@@ -5,9 +5,7 @@ SBINDIR ?= $(PREFIX)/sbin
 MANDIR = $(PREFIX)/share/man
 
 CFLAGS ?= -Werror -Wall -W
-override CFLAGS += -I../../libselinux/include -I../../libsemanage/include
-override LDFLAGS+= -L../../libselinux/src     -L../../libsemanage/src
-override LDLIBS += $(LIBSEMANAGE_LDLIBS) -lsepol $(LIBSELINUX_LDLIBS)
+override LDLIBS += -lsepol -lselinux -lsemanage
 SEMODULE_OBJS = semodule.o
 
 all: semodule genhomedircon
@@ -35,3 +33,7 @@ relabel:
 
 clean:
 	-rm -f semodule *.o genhomedircon
+
+indent:
+	../../scripts/Lindent $(wildcard *.[ch])
+

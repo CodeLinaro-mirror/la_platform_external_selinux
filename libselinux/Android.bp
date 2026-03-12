@@ -81,6 +81,7 @@ cc_defaults {
         "src/getenforce.c",
         "src/getfilecon.c",
         "src/getpeercon.c",
+        "src/hashtab.c",
         "src/init.c",
         "src/label.c",
         "src/label_backends_android.c",
@@ -108,18 +109,7 @@ cc_defaults {
         host: {
             cflags: [
                 "-DBUILD_HOST",
-                "-DHAVE_STRLCPY",
             ],
-            static: {
-                whole_static_libs: [
-                    "libcutils",
-                ],
-            },
-            shared: {
-                shared_libs: [
-                    "libcutils",
-                ],
-            },
         },
         android: {
             cflags: [
@@ -134,6 +124,7 @@ cc_defaults {
                     "libpackagelistparser",
                 ],
             },
+
             shared: {
                 shared_libs: [
                     "libpackagelistparser",
@@ -222,7 +213,6 @@ cc_test_host {
     ],
     whole_static_libs: [
         "libbase",
-        "libcutils",
         "liblog",
         "libpcre2",
     ],
