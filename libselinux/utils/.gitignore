@@ -16,7 +16,6 @@ getseuser
 matchpathcon
 policyvers
 sefcontext_compile
-selabel_compare
 selabel_digest
 selabel_get_digests_all_partial_matches
 selabel_lookup

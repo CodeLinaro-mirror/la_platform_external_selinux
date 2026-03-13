@@ -20,10 +20,9 @@ typedef struct dbase_file dbase_t;
 #include "debug.h"
 
 static int ibendport_print(semanage_handle_t *handle,
-			   const semanage_ibendport_t *ibendport,
+			   semanage_ibendport_t *ibendport,
 			   FILE *str)
 {
-	const semanage_context_t *con;
 	char *con_str = NULL;
 	char *ibdev_name_str = NULL;
 	int port = semanage_ibendport_get_port(ibendport);
@@ -31,7 +30,7 @@ static int ibendport_print(semanage_handle_t *handle,
 	if (semanage_ibendport_get_ibdev_name(handle, ibendport, &ibdev_name_str) != 0)
 		goto err;
 
-	con = semanage_ibendport_get_con(ibendport);
+	semanage_context_t *con = semanage_ibendport_get_con(ibendport);
 
 	if (fprintf(str, "ibendportcon %s ", ibdev_name_str) < 0)
 		goto err;
@@ -130,7 +129,7 @@ err:
 }
 
 /* IBENDPORT RECORD: FILE extension: method table */
-static const record_file_table_t SEMANAGE_IBENDPORT_FILE_RTABLE = {
+record_file_table_t SEMANAGE_IBENDPORT_FILE_RTABLE = {
 	.parse = ibendport_parse,
 	.print = ibendport_print,
 };
