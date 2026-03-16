@@ -36,8 +36,6 @@ CFLAGS ?= -O -Wall -W -Wundef -Wformat-y2k -Wformat-security -Winit-self -Wmissi
           -Werror -Wno-aggregate-return -Wno-redundant-decls -Wstrict-overflow=5 \
           $(EXTRA_CFLAGS)
 
-override CFLAGS += $(LFS_CFLAGS)
-
 ifeq ($(OS), Darwin)
 override CFLAGS += -I/opt/local/include -I../../libsepol/include
 override LDFLAGS += -L../../libsepol/src -undefined dynamic_lookup
@@ -53,13 +51,7 @@ else
 TARGETS=$(patsubst %.c,%,$(sort $(wildcard *.c)))
 endif
 
-sefcontext_compile: LDLIBS += ../src/libselinux.a -lsepol
-
-PCRE_USERS = matchpathcon sefcontext_compile selabel_compare \
-	selabel_digest selabel_get_digests_all_partial_matches \
-	selabel_lookup selabel_lookup_best_match \
-	selabel_partial_match
-$(PCRE_USERS): LDLIBS += $(PCRE_LDLIBS)
+sefcontext_compile: LDLIBS += ../src/libselinux.a $(PCRE_LDLIBS) -lsepol
 
 all: $(TARGETS)
 
@@ -72,4 +64,8 @@ clean:
 
 distclean: clean
 
+indent:
+	../../scripts/Lindent $(wildcard *.[ch])
+
 relabel:
+

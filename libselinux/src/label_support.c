@@ -4,7 +4,6 @@
  * Author : Richard Haines <richard_c_haines@btinternet.com>
  */
 
-#include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -22,11 +21,10 @@
  *            errno will be set.
  *
  */
-static inline int read_spec_entry(char **entry, const char **ptr, size_t *len, const char **errbuf)
+static inline int read_spec_entry(char **entry, char **ptr, int *len, const char **errbuf)
 {
-	const char *tmp_buf;
-
 	*entry = NULL;
+	char *tmp_buf = NULL;
 
 	while (isspace((unsigned char)**ptr) && **ptr != '\0')
 		(*ptr)++;
@@ -45,12 +43,6 @@ static inline int read_spec_entry(char **entry, const char **ptr, size_t *len, c
 	}
 
 	if (*len) {
-		if (*len >= UINT16_MAX) {
-			errno = EINVAL;
-			*errbuf = "Spec entry too long";
-			return -1;
-		}
-
 		*entry = strndup(tmp_buf, *len);
 		if (!*entry)
 			return -1;
@@ -70,23 +62,22 @@ static inline int read_spec_entry(char **entry, const char **ptr, size_t *len, c
  * This function calls read_spec_entry() to do the actual string processing.
  * As such, can return anything from that function as well.
  */
-int  read_spec_entries(char *line_buf, size_t nread, const char **errbuf, int num_args, ...)
+int  read_spec_entries(char *line_buf, const char **errbuf, int num_args, ...)
 {
-	char **spec_entry;
-	const char *buf_p;
-	size_t entry_len = 0;
-	int rc, items;
+	char **spec_entry, *buf_p;
+	int len, rc, items, entry_len = 0;
 	va_list ap;
 
 	*errbuf = NULL;
 
-	if (line_buf[nread - 1] == '\n')
-		line_buf[nread - 1] = '\0';
+	len = strlen(line_buf);
+	if (line_buf[len - 1] == '\n')
+		line_buf[len - 1] = '\0';
 	else
 		/* Handle case if line not \n terminated by bumping
 		 * the len for the check below (as the line is NUL
 		 * terminated by getline(3)) */
-		nread++;
+		len++;
 
 	buf_p = line_buf;
 	while (isspace((unsigned char)*buf_p))
@@ -103,7 +94,7 @@ int  read_spec_entries(char *line_buf, size_t nread, const char **errbuf, int nu
 	while (items < num_args) {
 		spec_entry = va_arg(ap, char **);
 
-		if (buf_p[0] == '\0' || nread - 1 == (size_t)(buf_p - line_buf)) {
+		if (len - 1 == buf_p - line_buf) {
 			va_end(ap);
 			return items;
 		}

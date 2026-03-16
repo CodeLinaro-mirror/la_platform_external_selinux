@@ -21,19 +21,25 @@
 #include "utilities.h"
 #include "test_fcontext.h"
 
-static const char FCONTEXTS[] =
+char FCONTEXTS[] =
     "/etc/selinux(/.*) -s system_u:object_r:first_t:s0\n"
     "/etc/selinux/targeted -- system_u:object_r:second_t:s0\n"
     "/etc/selinux(/.*) -b system_u:object_r:third_t:s0\n";
-static const unsigned int FCONTEXTS_LEN = sizeof(FCONTEXTS);
+unsigned int FCONTEXTS_LEN = sizeof(FCONTEXTS);
 
 #define FCONTEXTS_COUNT 3
 
 #define FCONTEXT1_EXPR "/etc/selinux(/.*)"
 #define FCONTEXT1_TYPE SEMANAGE_FCONTEXT_SOCK
+#define FCONTEXT1_CON "system_u:object_r:first_t:s0"
 
 #define FCONTEXT2_EXPR "/etc/selinux/targeted"
 #define FCONTEXT2_TYPE SEMANAGE_FCONTEXT_REG
+#define FCONTEXT2_CON "system_u:object_r:second_t:s0"
+
+#define FCONTEXT3_EXPR "/etc/selinux(/.*)"
+#define FCONTEXT3_TYPE SEMANAGE_FCONTEXT_BLOCK
+#define FCONTEXT3_CON "system_u:object_r:third_t:s0"
 
 #define FCONTEXT_NONEXISTENT_EXPR "/asdf"
 #define FCONTEXT_NONEXISTENT_TYPE SEMANAGE_FCONTEXT_ALL
@@ -64,6 +70,8 @@ static void test_fcontext_exists_local(void);
 static void test_fcontext_count_local(void);
 static void test_fcontext_iterate_local(void);
 static void test_fcontext_list_local(void);
+
+extern semanage_handle_t *sh;
 
 static int write_file_contexts(const char *data, unsigned int data_len)
 {
@@ -645,10 +653,9 @@ static void test_fcontext_count(void)
 }
 
 /* Function semanage_fcontext_iterate */
-static unsigned int counter_fcontext_iterate = 0;
+unsigned int counter_fcontext_iterate = 0;
 
-static int handler_fcontext_iterate(const semanage_fcontext_t *record,
-				    __attribute__((unused)) void *varg)
+static int handler_fcontext_iterate(const semanage_fcontext_t *record, void *varg)
 {
 	CU_ASSERT_PTR_NOT_NULL(record);
 	counter_fcontext_iterate++;
@@ -927,10 +934,10 @@ static void test_fcontext_count_local(void)
 }
 
 /* Function semanage_fcontext_iterate_local */
-static unsigned int counter_fcontext_iterate_local = 0;
+unsigned int counter_fcontext_iterate_local = 0;
 
 static int handler_fcontext_iterate_local(const semanage_fcontext_t *record,
-					  __attribute__((unused)) void *varg)
+				   void *varg)
 {
 	CU_ASSERT_PTR_NOT_NULL(record);
 	counter_fcontext_iterate_local++;

@@ -9,14 +9,14 @@ third_party {
     type: GIT
     value: "https://github.com/SELinuxProject/selinux.git"
   }
-  version: "3.10"
+  version: "3.7"
   license_type: RESTRICTED
   last_upgrade_date {
-    year: 2026
-    month: 2
-    day: 19
+    year: 2024
+    month: 8
+    day: 6
   }
   security: {
-    tag: "NVD-CPE2.3:cpe:/a:selinux_project:selinux:3.10"
+    tag: "NVD-CPE2.3:cpe:/a:selinux_project:selinux:3.7"
   }
 }

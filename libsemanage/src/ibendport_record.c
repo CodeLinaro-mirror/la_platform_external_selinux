@@ -37,12 +37,10 @@ int semanage_ibendport_compare2(const semanage_ibendport_t *ibendport,
 }
 
 
- int semanage_ibendport_compare2_qsort(const void *p1, const void *p2)
+ int semanage_ibendport_compare2_qsort(const semanage_ibendport_t **ibendport,
+					     const semanage_ibendport_t **ibendport2)
 {
-	const semanage_ibendport_t *const *ibendport1 = p1;
-	const semanage_ibendport_t *const *ibendport2 = p2;
-
-	return sepol_ibendport_compare2(*ibendport1, *ibendport2);
+	return sepol_ibendport_compare2(*ibendport, *ibendport2);
 }
 
 int semanage_ibendport_key_create(semanage_handle_t *handle,
@@ -131,7 +129,7 @@ void semanage_ibendport_free(semanage_ibendport_t *ibendport)
 
 
 /*key base functions */
-const record_table_t SEMANAGE_IBENDPORT_RTABLE = {
+record_table_t SEMANAGE_IBENDPORT_RTABLE = {
 	.create = semanage_ibendport_create,
 	.key_extract = semanage_ibendport_key_extract,
 	.key_free = semanage_ibendport_key_free,

@@ -46,17 +46,17 @@ int security_compute_av_flags_raw(const char * scon,
 	if (ret < 0 || (size_t)ret >= len) {
 		errno = EOVERFLOW;
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 
 	ret = write(fd, buf, strlen(buf));
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	memset(buf, 0, len);
 	ret = read(fd, buf, len - 1);
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	ret = sscanf(buf, "%x %x %x %x %u %x",
 		     &avd->allowed, &avd->decided,
@@ -64,7 +64,7 @@ int security_compute_av_flags_raw(const char * scon,
 		     &avd->seqno, &avd->flags);
 	if (ret < 5) {
 		ret = -1;
-		goto out;
+		goto out2;
 	} else if (ret < 6)
 		avd->flags = 0;
 
@@ -79,8 +79,9 @@ int security_compute_av_flags_raw(const char * scon,
 		map_decision(tclass, avd);
 
 	ret = 0;
-      out:
+      out2:
 	free(buf);
+      out:
 	close(fd);
 	return ret;
 }

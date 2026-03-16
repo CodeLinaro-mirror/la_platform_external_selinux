@@ -18,8 +18,8 @@ GIO_CFLAGS = -DHAVE_DBUS $(shell $(PKG_CONFIG) --cflags gio-2.0)
 GIO_LIBS = $(shell $(PKG_CONFIG) --libs gio-2.0)
 
 CFLAGS ?= -g -Werror -Wall -W
-override CFLAGS += -I../../libselinux/include $(GIO_CFLAGS)
-override LDFLAGS+= -L../../libselinux/src
+override CFLAGS += $(GIO_CFLAGS)
+
 override LDLIBS += -lselinux $(GIO_LIBS)
 
 all: restorecond
@@ -58,5 +58,8 @@ relabel: install
 
 clean:
 	-rm -f restorecond *.o *~
+
+indent:
+	../../scripts/Lindent $(wildcard *.[ch])
 
 test:

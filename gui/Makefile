@@ -60,6 +60,8 @@ install: all
 clean:
 	(cd po && $(MAKE) $@)
 
+indent:
+
 relabel:
 
 test:

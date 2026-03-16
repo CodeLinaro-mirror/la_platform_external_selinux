@@ -25,8 +25,10 @@
 #include <ctype.h>
 #include <string.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <assert.h>
+
+#define TRUE 1
+#define FALSE 0
 
 char *semanage_findval(const char *file, const char *var, const char *delim)
 {
@@ -38,7 +40,7 @@ char *semanage_findval(const char *file, const char *var, const char *delim)
 	assert(file);
 	assert(var);
 
-	if ((fd = fopen(file, "re")) == NULL)
+	if ((fd = fopen(file, "r")) == NULL)
 		return NULL;
 
 	while (getline(&buff, &buff_len, fd) > 0) {
@@ -58,10 +60,10 @@ char *semanage_findval(const char *file, const char *var, const char *delim)
 int semanage_is_prefix(const char *str, const char *prefix)
 {
 	if (!str) {
-		return 0;
+		return FALSE;
 	}
 	if (!prefix) {
-		return 1;
+		return TRUE;
 	}
 
 	return strncmp(str, prefix, strlen(prefix)) == 0;
@@ -70,7 +72,7 @@ int semanage_is_prefix(const char *str, const char *prefix)
 char *semanage_split_on_space(const char *str)
 {
 	/* as per the man page, these are the isspace() chars */
-	const char *const seps = "\f\n\r\t\v ";
+	const char *seps = "\f\n\r\t\v ";
 	size_t off = 0;
 
 	if (!str)
@@ -85,7 +87,7 @@ char *semanage_split_on_space(const char *str)
 
 char *semanage_split(const char *str, const char *delim)
 {
-	const char *retval;
+	char *retval;
 
 	if (!str)
 		return NULL;
@@ -167,7 +169,7 @@ int semanage_list_sort(semanage_list_t ** l)
 	size_t count = 0;
 	size_t i = 0;
 
-	if (!l || !(*l)->next)
+	if (!l)
 		return 0;
 
 	for (temp = *l; temp; temp = temp->next)
@@ -180,7 +182,8 @@ int semanage_list_sort(semanage_list_t ** l)
 		array[i++] = temp;
 	}
 
-	qsort(array, count, sizeof(semanage_list_t *), semanage_cmp_plist_t);
+	qsort(array, count, sizeof(semanage_list_t *),
+	      (int (*)(const void *, const void *))&semanage_cmp_plist_t);
 	for (i = 0; i < (count - 1); ++i) {
 		array[i]->next = array[i + 1];
 	}
@@ -191,17 +194,14 @@ int semanage_list_sort(semanage_list_t ** l)
 	return 0;
 }
 
-int semanage_cmp_plist_t(const void *x, const void *y)
+int semanage_cmp_plist_t(const semanage_list_t ** x, const semanage_list_t ** y)
 {
-	const semanage_list_t *const *l1 = x;
-	const semanage_list_t *const *l2 = y;
-
-	return strcmp((*l1)->data, (*l2)->data);
+	return strcmp((*x)->data, (*y)->data);
 }
 
-size_t semanage_str_count(const char *data, char what)
+int semanage_str_count(const char *data, char what)
 {
-	size_t count = 0;
+	int count = 0;
 
 	if (!data)
 		return 0;
@@ -216,7 +216,7 @@ size_t semanage_str_count(const char *data, char what)
 
 void semanage_rtrim(char *str, char trim_to)
 {
-	size_t len;
+	int len = 0;
 
 	if (!str)
 		return;
@@ -318,7 +318,7 @@ semanage_list_t *semanage_slurp_file_filter(FILE * file,
 		if (pred(line)) {
 			semanage_rtrim(line, '\n');
 			current = list_addafter_controlmem(current, line);
-			if (!current)
+			if (!current) 
 				break;
 			line = NULL;
 			buff_len = 0;
@@ -327,34 +327,4 @@ semanage_list_t *semanage_slurp_file_filter(FILE * file,
 	free(line);
 
 	return head.next;
-}
-
-int write_full(int fd, const void *buf, size_t len)
-{
-	ssize_t w;
-	const unsigned char *p = buf;
-
-	while (len > 0) {
-		w = write(fd, p, len);
-		if (w == -1) {
-			if (errno == EINTR)
-				continue;
-
-			return -1;
-		}
-
-		p += w;
-		len -= (size_t)w;
-	}
-
-	return 0;
-}
-
-#ifdef __GNUC__
-__attribute__((nonnull))
-#endif
-char *semanage_basename(const char *filename)
-{
-	char *p = strrchr(filename, '/');
-	return p ? p + 1 : (char *)filename;
 }

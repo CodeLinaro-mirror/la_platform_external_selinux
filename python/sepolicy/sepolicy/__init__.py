@@ -195,6 +195,7 @@ def init_policy():
     policy(policy_file)
 
 def info(setype, name=None):
+    global _pol
     if not _pol:
         init_policy()
 
@@ -353,6 +354,7 @@ def _setools_rule_to_dict(rule):
 
 
 def search(types, seinfo=None):
+    global _pol
     if not _pol:
         init_policy()
     if not seinfo:
@@ -934,6 +936,7 @@ def get_all_roles():
     if roles:
         return roles
 
+    global _pol
     if not _pol:
         init_policy()
 
