@@ -6,7 +6,9 @@ MANDIR = $(PREFIX)/share/man
 BASHCOMPLETIONDIR ?= $(PREFIX)/share/bash-completion/completions
 
 CFLAGS ?= -Werror -Wall -W
-override LDLIBS += -lselinux -lsemanage
+override CFLAGS += -I../../libselinux/include -I../../libsemanage/include
+override LDFLAGS+= -L../../libselinux/src     -L../../libsemanage/src
+override LDLIBS += $(LIBSEMANAGE_LDLIBS) $(LIBSELINUX_LDLIBS)
 SETSEBOOL_OBJS = setsebool.o
 
 BASHCOMPLETIONS=setsebool-bash-completion.sh 
@@ -33,7 +35,3 @@ relabel:
 
 clean:
 	-rm -f setsebool *.o
-
-indent:
-	../../scripts/Lindent $(wildcard *.[ch])
-
