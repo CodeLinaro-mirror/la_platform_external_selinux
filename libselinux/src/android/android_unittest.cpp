@@ -149,13 +149,13 @@ TEST_F(AndroidSELinuxTest, LoadAndLookupSeAppContextPccComponent)
 
 	ret = seapp_context_lookup_internal(SEAPP_DOMAIN, AID_PCC_COMPONENT_PROCESS_START, false, "platform", "com.android.test1", ctx);
 	EXPECT_EQ(ret, 0);
-	EXPECT_STREQ(context_str(ctx), "u:r:pcc_component:s0:c0,c256,c512,c768");
+	EXPECT_STREQ(context_str(ctx), "u:r:pcc_component:s0:c48,c373,c512,c768");
 	context_free(ctx);
 
 	ctx = context_new("u:r:unknown_data_file");
 	ret = seapp_context_lookup_internal(SEAPP_TYPE, AID_PCC_COMPONENT_PROCESS_START, false, "platform", "com.android.test1", ctx);
 	EXPECT_EQ(ret, 0);
-	EXPECT_STREQ(context_str(ctx), "u:r:pcc_data_file:s0:c0,c256,c512,c768");
+	EXPECT_STREQ(context_str(ctx), "u:r:pcc_data_file:s0:c48,c373,c512,c768");
 	context_free(ctx);
 }
 
