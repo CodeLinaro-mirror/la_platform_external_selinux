@@ -34,6 +34,12 @@ PCRE_CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PCRE_MODULE))
 PCRE_LDLIBS := $(shell $(PKG_CONFIG) --libs $(PCRE_MODULE))
 export PCRE_MODULE PCRE_CFLAGS PCRE_LDLIBS
 
+USE_LFS ?= y
+ifeq ($(USE_LFS),y)
+	LFS_CFLAGS := -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+endif
+export LFS_CFLAGS
+
 OS := $(shell uname)
 export OS
 
@@ -44,7 +50,7 @@ COMPILER := clang
 endif
 export COMPILER
 
-all install relabel clean distclean indent:
+all install relabel clean distclean:
 	@for subdir in $(SUBDIRS); do \
 		(cd $$subdir && $(MAKE) $@) || exit 1; \
 	done
