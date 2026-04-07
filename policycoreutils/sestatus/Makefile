@@ -7,9 +7,8 @@ MANDIR = $(PREFIX)/share/man
 ETCDIR ?= /etc
 
 CFLAGS ?= -Werror -Wall -W
-override CFLAGS += -I../../libselinux/include -D_FILE_OFFSET_BITS=64
-override LDFLAGS+= -L../../libselinux/src
-override LDLIBS += $(LIBSELINUX_LDLIBS)
+override CFLAGS += -D_FILE_OFFSET_BITS=64
+override LDLIBS += -lselinux
 
 all: sestatus
 
@@ -40,5 +39,8 @@ install: all
 
 clean:
 	rm -f sestatus *.o
+
+indent:
+	../../scripts/Lindent $(wildcard *.[ch])
 
 relabel:

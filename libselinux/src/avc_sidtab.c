@@ -4,7 +4,6 @@
  * Author : Eamon Walsh, <ewalsh@epoch.ncsc.mil>
  */
 #include <errno.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -44,78 +43,65 @@ int sidtab_init(struct sidtab *s)
 	return rc;
 }
 
-static struct sidtab_node *
-sidtab_insert(struct sidtab *s, const char * ctx)
+int sidtab_insert(struct sidtab *s, const char * ctx)
 {
-	unsigned hvalue;
+	int hvalue, rc = 0;
 	struct sidtab_node *newnode;
 	char * newctx;
 
-	if (s->nel >= UINT_MAX - 1)
-		return NULL;
-
 	newnode = (struct sidtab_node *)avc_malloc(sizeof(*newnode));
-	if (!newnode)
-		return NULL;
+	if (!newnode) {
+		rc = -1;
+		goto out;
+	}
 	newctx = strdup(ctx);
 	if (!newctx) {
+		rc = -1;
 		avc_free(newnode);
-		return NULL;
+		goto out;
 	}
 
 	hvalue = sidtab_hash(newctx);
 	newnode->next = s->htable[hvalue];
 	newnode->sid_s.ctx = newctx;
-	newnode->sid_s.id = ++s->nel;
+	newnode->sid_s.refcnt = 1;	/* unused */
 	s->htable[hvalue] = newnode;
-	return newnode;
-}
-
-const struct security_id *
-sidtab_context_lookup(const struct sidtab *s, const char *ctx)
-{
-	unsigned hvalue;
-	const struct sidtab_node *cur;
-
-	hvalue = sidtab_hash(ctx);
-
-	cur = s->htable[hvalue];
-	while (cur != NULL && strcmp(cur->sid_s.ctx, ctx))
-		cur = cur->next;
-
-	if (cur == NULL)
-		return NULL;
-
-	return &cur->sid_s;
+	s->nel++;
+      out:
+	return rc;
 }
 
 int
 sidtab_context_to_sid(struct sidtab *s,
 		      const char * ctx, security_id_t * sid)
 {
-	struct sidtab_node *new;
-	const struct security_id *lookup_sid = sidtab_context_lookup(s, ctx);
+	int hvalue, rc = 0;
+	struct sidtab_node *cur;
 
-	if (lookup_sid) {
-		/* Dropping const is fine since our sidtab parameter is non-const. */
-		*sid = (struct security_id *)lookup_sid;
-		return 0;
+	*sid = NULL;
+	hvalue = sidtab_hash(ctx);
+
+      loop:
+	cur = s->htable[hvalue];
+	while (cur != NULL && strcmp(cur->sid_s.ctx, ctx))
+		cur = cur->next;
+
+	if (cur == NULL) {	/* need to make a new entry */
+		rc = sidtab_insert(s, ctx);
+		if (rc)
+			goto out;
+		goto loop;	/* find the newly inserted node */
 	}
 
-	new = sidtab_insert(s, ctx);
-	if (new == NULL) {
-		*sid = NULL;
-		return -1;
-	}
-
-	*sid = &new->sid_s;
-	return 0;
+	*sid = &cur->sid_s;
+      out:
+	return rc;
 }
 
-void sidtab_sid_stats(const struct sidtab *s, char *buf, size_t buflen)
+void sidtab_sid_stats(struct sidtab *s, char *buf, int buflen)
 {
-	size_t i, chain_len, slots_used, max_chain_len;
-	const struct sidtab_node *cur;
+	int i, chain_len, slots_used, max_chain_len;
+	struct sidtab_node *cur;
 
 	slots_used = 0;
 	max_chain_len = 0;
@@ -135,8 +121,8 @@ void sidtab_sid_stats(const struct sidtab *s, char *buf, size_t buflen)
 	}
 
 	snprintf(buf, buflen,
-		 "%s:  %u SID entries and %zu/%d buckets used, longest "
-		 "chain length %zu\n", avc_prefix, s->nel, slots_used,
+		 "%s:  %u SID entries and %d/%d buckets used, longest "
+		 "chain length %d\n", avc_prefix, s->nel, slots_used,
 		 SIDTAB_SIZE, max_chain_len);
 }
 
@@ -145,7 +131,7 @@ void sidtab_destroy(struct sidtab *s)
 	int i;
 	struct sidtab_node *cur, *temp;
 
-	if (!s || !s->htable)
+	if (!s)
 		return;
 
 	for (i = 0; i < SIDTAB_SIZE; i++) {
@@ -156,6 +142,7 @@ void sidtab_destroy(struct sidtab *s)
 			freecon(temp->sid_s.ctx);
 			avc_free(temp);
 		}
+		s->htable[i] = NULL;
 	}
 	avc_free(s->htable);
 	s->htable = NULL;
