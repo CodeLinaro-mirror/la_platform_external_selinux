@@ -243,6 +243,12 @@ cc_binary {
         "libselinux",
     ],
 
+    target: {
+        musl: {
+            static_libs: ["libfts"],
+        },
+    },
+
     stl: "",
 }
 
