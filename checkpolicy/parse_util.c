@@ -23,7 +23,7 @@
 
 /* these are defined in policy_parse.y and are needed for read_source_policy */
 extern FILE *yyin;
-extern void init_parser(int pass, const char *input_name);
+extern void init_parser(int);
 extern int yyparse(void);
 extern void yyrestart(FILE *);
 extern int yylex_destroy(void);
@@ -31,6 +31,7 @@ extern queue_t id_queue;
 extern unsigned int policydb_errors;
 extern policydb_t *policydbp;
 extern int mlspol;
+extern void set_source_file(const char *name);
 
 int read_source_policy(policydb_t * p, const char *file, const char *progname)
 {
@@ -41,6 +42,7 @@ int read_source_policy(policydb_t * p, const char *file, const char *progname)
 		fprintf(stderr, "%s:  unable to open %s:  %s\n", progname, file, strerror(errno));
 		return -1;
 	}
+	set_source_file(file);
 
 	id_queue = queue_create();
 	if (id_queue == NULL) {
@@ -56,7 +58,7 @@ int read_source_policy(policydb_t * p, const char *file, const char *progname)
 		goto cleanup;
 	}
 
-	init_parser(1, file);
+	init_parser(1);
 	if (yyparse() || policydb_errors) {
 		fprintf(stderr,
 			"%s:  error(s) encountered while parsing configuration\n",
@@ -64,7 +66,8 @@ int read_source_policy(policydb_t * p, const char *file, const char *progname)
 		goto cleanup;
 	}
 	rewind(yyin);
-	init_parser(2, file);
+	init_parser(2);
+	set_source_file(file);
 	yyrestart(yyin);
 	if (yyparse() || policydb_errors) {
 		fprintf(stderr,

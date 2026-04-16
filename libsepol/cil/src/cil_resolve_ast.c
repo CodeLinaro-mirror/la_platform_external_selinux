@@ -624,34 +624,6 @@ exit:
 	return rc;
 }
 
-int cil_resolve_typeneveraudit(struct cil_tree_node *current, struct cil_db *db)
-{
-	struct cil_typeneveraudit *typeperm = current->data;
-	struct cil_symtab_datum *type_datum = NULL;
-	struct cil_tree_node *type_node = NULL;
-	int rc = SEPOL_ERR;
-
-	rc = cil_resolve_name(current, typeperm->type_str, CIL_SYM_TYPES, db, &type_datum);
-	if (rc != SEPOL_OK) {
-		goto exit;
-	}
-
-	type_node = NODE(type_datum);
-
-	if (type_node->flavor != CIL_TYPE && type_node->flavor != CIL_TYPEALIAS) {
-		cil_log(CIL_ERR, "Typeneveraudit must be a type or type alias\n");
-		rc = SEPOL_ERR;
-		goto exit;
-	}
-
-	typeperm->type = type_datum;
-
-	return SEPOL_OK;
-
-exit:
-	return rc;
-}
-
 int cil_resolve_nametypetransition(struct cil_tree_node *current, struct cil_db *db)
 {
 	struct cil_nametypetransition *nametypetrans = current->data;
@@ -3680,9 +3652,6 @@ static int __cil_resolve_ast_node(struct cil_tree_node *node, struct cil_args_re
 		case CIL_TYPEPERMISSIVE:
 			rc = cil_resolve_typepermissive(node, db);
 			break;
-		case CIL_TYPENEVERAUDIT:
-			rc = cil_resolve_typeneveraudit(node, db);
-			break;
 		case CIL_NAMETYPETRANSITION:
 			rc = cil_resolve_nametypetransition(node, db);
 			break;
@@ -3879,12 +3848,10 @@ static int __cil_resolve_ast_node_helper(struct cil_tree_node *node, uint32_t *f
 			node->flavor != CIL_CONDBLOCK &&
 			node->flavor != CIL_AVRULE &&
 			node->flavor != CIL_TYPE_RULE &&
-			node->flavor != CIL_NAMETYPETRANSITION &&
 			node->flavor != CIL_SRC_INFO &&
-			((args->db->policy_version < POLICYDB_VERSION_COND_XPERMS) ||
-			 (node->flavor != CIL_AVRULEX))) {
+			node->flavor != CIL_NAMETYPETRANSITION) {
 			rc = SEPOL_ERR;
-		} else if (node->flavor == CIL_AVRULE || node->flavor == CIL_AVRULEX) {
+		} else if (node->flavor == CIL_AVRULE) {
 			struct cil_avrule *rule = node->data;
 			if (rule->rule_kind == CIL_AVRULE_NEVERALLOW) {
 				rc = SEPOL_ERR;

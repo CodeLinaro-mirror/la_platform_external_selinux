@@ -8,7 +8,7 @@
 #include "handle.h"
 
 /* PORT RECORD: method table */
-extern const record_table_t SEMANAGE_PORT_RTABLE;
+extern record_table_t SEMANAGE_PORT_RTABLE;
 
 extern int port_file_dbase_init(semanage_handle_t * handle,
 				const char *path_ro,
@@ -26,6 +26,7 @@ extern int semanage_port_validate_local(semanage_handle_t * handle);
 
 /* ==== Internal (to ports) API === */
 
- int semanage_port_compare2_qsort(const void* p1, const void *p2);
+ int semanage_port_compare2_qsort(const semanage_port_t ** port,
+					const semanage_port_t ** port2);
 
 #endif

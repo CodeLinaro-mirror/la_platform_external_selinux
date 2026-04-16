@@ -39,23 +39,25 @@ int security_get_initial_context_raw(const char * name, char ** con)
 		return -1;
 
 	size = selinux_page_size;
-	buf = calloc(1, size);
+	buf = malloc(size);
 	if (!buf) {
 		ret = -1;
 		goto out;
 	}
+	memset(buf, 0, size);
 	ret = read(fd, buf, size - 1);
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	*con = strdup(buf);
 	if (!(*con)) {
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 	ret = 0;
-      out:
+      out2:
 	free(buf);
+      out:
 	close(fd);
 	return ret;
 }

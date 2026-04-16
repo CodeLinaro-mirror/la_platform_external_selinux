@@ -41,26 +41,27 @@ int security_compute_relabel_raw(const char * scon,
 	if (ret < 0 || (size_t)ret >= size) {
 		errno = EOVERFLOW;
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 
 	ret = write(fd, buf, strlen(buf));
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	memset(buf, 0, size);
 	ret = read(fd, buf, size - 1);
 	if (ret < 0)
-		goto out;
+		goto out2;
 
 	*newcon = strdup(buf);
 	if (!*newcon) {
 		ret = -1;
-		goto out;
+		goto out2;
 	}
 	ret = 0;
-      out:
+      out2:
 	free(buf);
+      out:
 	close(fd);
 	return ret;
 }

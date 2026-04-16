@@ -24,14 +24,14 @@ typedef struct record_activedb_table {
 
 /* ACTIVEDB - initialization */
 extern int dbase_activedb_init(semanage_handle_t * handle,
-			       const record_table_t * rtable,
-			       const record_activedb_table_t * ratable,
+			       record_table_t * rtable,
+			       record_activedb_table_t * ratable,
 			       dbase_activedb_t ** dbase);
 
 /* ACTIVEDB - release */
 extern void dbase_activedb_release(dbase_activedb_t * dbase);
 
 /* ACTIVEDB - method table implementation */
-extern const dbase_table_t SEMANAGE_ACTIVEDB_DTABLE;
+extern dbase_table_t SEMANAGE_ACTIVEDB_DTABLE;
 
 #endif

@@ -36,14 +36,13 @@ void restore_init(struct restore_opts *opts)
 	opts->restorecon_flags = 0;
 	opts->restorecon_flags = opts->nochange | opts->verbose |
 			   opts->progress | opts->set_specctx  |
-			   opts->set_user_role |
 			   opts->add_assoc | opts->ignore_digest |
 			   opts->recurse | opts->userealpath |
 			   opts->xdev | opts->abort_on_error |
 			   opts->syslog_changes | opts->log_matches |
 			   opts->ignore_noent | opts->ignore_mounts |
 			   opts->mass_relabel | opts->conflict_error |
-			   opts->count_errors | opts->count_relabeled;
+			   opts->count_errors;
 
 	/* Use setfiles, restorecon and restorecond own handles */
 	selinux_restorecon_set_sehandle(opts->hnd);
@@ -75,7 +74,7 @@ void restore_finish(void)
 }
 
 int process_glob(char *name, struct restore_opts *opts, size_t nthreads,
-		 long unsigned *skipped_errors, long unsigned *relabeled_files)
+		 long unsigned *skipped_errors)
 {
 	glob_t globbuf;
 	size_t i, len;
@@ -99,12 +98,8 @@ int process_glob(char *name, struct restore_opts *opts, size_t nthreads,
 						 nthreads);
 		if (rc < 0)
 			errors = rc;
-		else {
-			if (opts->restorecon_flags & SELINUX_RESTORECON_COUNT_ERRORS)
-				*skipped_errors += selinux_restorecon_get_skipped_errors();
-			if (opts->restorecon_flags & SELINUX_RESTORECON_COUNT_RELABELED)
-				*relabeled_files += selinux_restorecon_get_relabeled_files();
-		}
+		else if (opts->restorecon_flags & SELINUX_RESTORECON_COUNT_ERRORS)
+			*skipped_errors += selinux_restorecon_get_skipped_errors();
 	}
 
 	globfree(&globbuf);
