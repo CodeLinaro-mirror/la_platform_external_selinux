@@ -100,6 +100,11 @@ extern int selinux_page_size ;
 
 extern int has_selinux_config ;
 
+/* ANDROID: for the host build, strlcpy is provided by libcutils */
+#ifdef BUILD_HOST
+#include <cutils/memory.h>
+#endif
+
 #ifndef HAVE_STRLCPY
 size_t strlcpy(char *dest, const char *src, size_t size);
 #endif
@@ -145,5 +150,15 @@ static inline void fclose_errno_safe(FILE *stream)
 	(void) fclose(stream);
 	errno = saved_errno;
 }
+
+#ifdef __GNUC__
+# define likely(x)			__builtin_expect(!!(x), 1)
+# define unlikely(x)			__builtin_expect(!!(x), 0)
+#else
+# define likely(x)			(x)
+# define unlikely(x)			(x)
+#endif /* __GNUC__ */
+
+#define spaceship_cmp(a, b)		(((a) > (b)) - ((a) < (b)))
 
 #endif /* SELINUX_INTERNAL_H_ */
