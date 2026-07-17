@@ -59,3 +59,7 @@ LIBSELINUX_36 { # introduced=36
     getprevcon; # systemapi
     selinux_android_tee_service_context_handle; # systemapi
 };
+
+LIBSELINUX_PLATFORM {
+    selabel_partial_match;
+};
