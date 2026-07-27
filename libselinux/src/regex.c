@@ -31,9 +31,9 @@
 
 #ifdef USE_PCRE2
 static pthread_key_t match_data_key;
-static int match_data_key_initialized = -1;
-static pthread_mutex_t key_mutex = PTHREAD_MUTEX_INITIALIZER;
-static __thread char match_data_initialized;
+static pthread_once_t match_data_key_once = PTHREAD_ONCE_INIT;
+static int match_data_key_alloc_failed = 0;
+static int match_data_key_created = 0;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 static char arch_string_buffer[32];
 
@@ -195,25 +195,25 @@ out:
 	return rc;
 }
 
-static void __attribute__((destructor)) match_data_thread_free(void *key)
+static void match_data_thread_free(void *ptr)
 {
-	void *value;
-	pcre2_match_data *match_data;
+	pcre2_match_data_free(ptr);
+}
 
-	if (match_data_key_initialized <= 0 || !match_data_initialized)
-		return;
+static void match_data_key_init(void)
+{
+	if (__selinux_key_create(&match_data_key, match_data_thread_free) == 0)
+		match_data_key_created = 1;
+	else
+		match_data_key_alloc_failed = 1;
+}
 
-	value = __selinux_getspecific(match_data_key);
-	match_data = value ? value : key;
-
-	pcre2_match_data_free(match_data);
-
-	__pthread_mutex_lock(&key_mutex);
-	if (--match_data_key_initialized == 1) {
+static void __attribute__((destructor)) match_data_key_destroy(void)
+{
+	if (match_data_key_created) {
 		__selinux_key_delete(match_data_key);
-		match_data_key_initialized = -1;
+		match_data_key_created = 0;
 	}
-	__pthread_mutex_unlock(&key_mutex);
 }
 
 void regex_data_free(struct regex_data *regex)
@@ -231,32 +231,30 @@ int regex_match(struct regex_data *regex, char const *subject, int partial)
 	bool slow;
 	pcre2_match_data *match_data = NULL;
 
-	if (match_data_key_initialized > 0) {
-		if (match_data_initialized == 0) {
+	__selinux_once(match_data_key_once, match_data_key_init);
+
+	if (!match_data_key_alloc_failed) {
+		match_data = __selinux_getspecific(match_data_key);
+		if (!match_data) {
 			match_data = pcre2_match_data_create(1, NULL);
 			if (match_data) {
-				match_data_initialized = 1;
 				__selinux_setspecific(match_data_key,
-							match_data);
-				__pthread_mutex_lock(&key_mutex);
-				match_data_key_initialized++;
-				__pthread_mutex_unlock(&key_mutex);
+						      match_data);
 			}
-		} else
-			match_data = __selinux_getspecific(match_data_key);
+		}
 	}
 
-	slow = (match_data_key_initialized <= 0 || match_data == NULL);
+	slow = (match_data_key_alloc_failed || match_data == NULL);
 	if (slow) {
 		match_data = pcre2_match_data_create_from_pattern(regex->regex,
-									NULL);
+								  NULL);
 		if (!match_data)
 			return REGEX_ERROR;
 	}
 
-	rc = pcre2_match(
-	    regex->regex, (PCRE2_SPTR)subject, PCRE2_ZERO_TERMINATED, 0,
-	    partial ? PCRE2_PARTIAL_SOFT : 0, match_data, NULL);
+	rc = pcre2_match(regex->regex, (PCRE2_SPTR)subject,
+			 PCRE2_ZERO_TERMINATED, 0,
+			 partial ? PCRE2_PARTIAL_SOFT : 0, match_data, NULL);
 
 	if (slow)
 		pcre2_match_data_free(match_data);
@@ -300,17 +298,6 @@ struct regex_data *regex_data_create(void)
 {
 	struct regex_data *regex_data =
 		(struct regex_data *)calloc(1, sizeof(struct regex_data));
-	if (!regex_data)
-		return NULL;
-
-	__pthread_mutex_lock(&key_mutex);
-	if (match_data_key_initialized < 0) {
-		match_data_key_initialized = !__selinux_key_create(
-							&match_data_key,
-							match_data_thread_free);
-	}
-	__pthread_mutex_unlock(&key_mutex);
-
 	return regex_data;
 }
 
