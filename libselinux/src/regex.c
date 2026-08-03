@@ -29,13 +29,28 @@
 
 #endif
 
+/**
+ * This constructor function allocates a buffer for a regex_data structure.
+ * The buffer is being initialized with zeroes.
+ */
+static struct regex_data *regex_data_create(void);
+
 #ifdef USE_PCRE2
 static pthread_key_t match_data_key;
 static pthread_once_t match_data_key_once = PTHREAD_ONCE_INIT;
 static int match_data_key_alloc_failed = 0;
 static int match_data_key_created = 0;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
+static pcre2_match_context *match_context;
 static char arch_string_buffer[32];
+
+/*
+ * Limit the number of backtrack steps to prevent catastrophic backtracking
+ * (ReDoS) from crafted file context patterns or lookup keys. 10 million steps
+ * is generous for legitimate file context patterns while bounding worst-case
+ * matching time to milliseconds.
+ */
+#define REGEX_MATCH_LIMIT 10000000U
 
 static void regex_arch_string_init(void)
 {
@@ -52,9 +67,8 @@ static void regex_arch_string_init(void)
 	}
 
 	rc = snprintf(arch_string_buffer, sizeof(arch_string_buffer),
-			"%zu-%zu-%s", sizeof(void *),
-			sizeof(REGEX_ARCH_SIZE_T),
-			endianness);
+		      "%zu-%zu-%s", sizeof(void *), sizeof(REGEX_ARCH_SIZE_T),
+		      endianness);
 	if (rc < 0 || (size_t)rc >= sizeof(arch_string_buffer)) {
 		arch_string_buffer[0] = '\0';
 		return;
@@ -81,12 +95,19 @@ int regex_prepare_data(struct regex_data **regex, char const *pattern_string,
 	if (!(*regex))
 		return -1;
 
-	(*regex)->regex = pcre2_compile(
-	    (PCRE2_SPTR)pattern_string, PCRE2_ZERO_TERMINATED, PCRE2_DOTALL,
-	    &errordata->error_code, &errordata->error_offset, NULL);
+	(*regex)->regex = pcre2_compile((PCRE2_SPTR)pattern_string,
+					PCRE2_ZERO_TERMINATED, PCRE2_DOTALL,
+					&errordata->error_code,
+					&errordata->error_offset, NULL);
 	if (!(*regex)->regex) {
 		goto err;
 	}
+
+	/* JIT-compile for complete and partial matching. pcre2_match() uses the
+	 * JIT automatically when available, avoiding the interpreter's
+	 * susceptibility to catastrophic backtracking. Failures are non-fatal. */
+	(void)pcre2_jit_compile((*regex)->regex,
+				PCRE2_JIT_COMPLETE | PCRE2_JIT_PARTIAL_SOFT);
 
 	return 0;
 
@@ -120,6 +141,9 @@ int regex_load_mmap(struct mmap_area *mmap_area, struct regex_data **regex,
 
 	entry_len = be32toh(data_u32);
 
+	if (entry_len > mmap_area->next_len)
+		return -1;
+
 	if (entry_len && do_load_precompregex) {
 		/*
 		 * this should yield exactly one because we store one pattern at
@@ -139,6 +163,10 @@ int regex_load_mmap(struct mmap_area *mmap_area, struct regex_data **regex,
 		if (rc != 1)
 			goto err;
 
+		(void)pcre2_jit_compile((*regex)->regex,
+					PCRE2_JIT_COMPLETE |
+						PCRE2_JIT_PARTIAL_SOFT);
+
 		*regex_compiled = true;
 	}
 
@@ -154,7 +182,8 @@ err:
 	return -1;
 }
 
-int regex_writef(struct regex_data *regex, FILE *fp, int do_write_precompregex)
+int regex_writef(const struct regex_data *regex, FILE *fp,
+		 int do_write_precompregex)
 {
 	int rc = 0;
 	size_t len;
@@ -202,10 +231,18 @@ static void match_data_thread_free(void *ptr)
 
 static void match_data_key_init(void)
 {
+	pcre2_match_context *mctx;
+
 	if (__selinux_key_create(&match_data_key, match_data_thread_free) == 0)
 		match_data_key_created = 1;
 	else
 		match_data_key_alloc_failed = 1;
+
+	mctx = pcre2_match_context_create(NULL);
+	if (mctx) {
+		pcre2_set_match_limit(mctx, REGEX_MATCH_LIMIT);
+		match_context = mctx;
+	}
 }
 
 static void __attribute__((destructor)) match_data_key_destroy(void)
@@ -252,9 +289,14 @@ int regex_match(struct regex_data *regex, char const *subject, int partial)
 			return REGEX_ERROR;
 	}
 
+	/* Use pcre2_match() rather than pcre2_jit_match(): pcre2_match()
+	 * automatically uses the JIT when the code has been compiled with
+	 * pcre2_jit_compile(), while pcre2_jit_match() is known to produce
+	 * incorrect results on some platforms (e.g. aarch64). */
 	rc = pcre2_match(regex->regex, (PCRE2_SPTR)subject,
 			 PCRE2_ZERO_TERMINATED, 0,
-			 partial ? PCRE2_PARTIAL_SOFT : 0, match_data, NULL);
+			 partial ? PCRE2_PARTIAL_SOFT : 0, match_data,
+			 match_context);
 
 	if (slow)
 		pcre2_match_data_free(match_data);
@@ -265,6 +307,7 @@ int regex_match(struct regex_data *regex, char const *subject, int partial)
 	case PCRE2_ERROR_PARTIAL:
 		return REGEX_MATCH_PARTIAL;
 	case PCRE2_ERROR_NOMATCH:
+	case PCRE2_ERROR_MATCHLIMIT:
 		return REGEX_NO_MATCH;
 	default:
 		return REGEX_ERROR;
@@ -280,7 +323,7 @@ int regex_match(struct regex_data *regex, char const *subject, int partial)
  * Preferably, this function would be replaced with an algorithm that computes
  * the equivalence of the automatons systematically.
  */
-int regex_cmp(struct regex_data *regex1, struct regex_data *regex2)
+int regex_cmp(const struct regex_data *regex1, const struct regex_data *regex2)
 {
 	int rc;
 	size_t len1, len2;
@@ -294,7 +337,7 @@ int regex_cmp(struct regex_data *regex1, struct regex_data *regex2)
 	return SELABEL_EQUAL;
 }
 
-struct regex_data *regex_data_create(void)
+static struct regex_data *regex_data_create(void)
 {
 	struct regex_data *regex_data =
 		(struct regex_data *)calloc(1, sizeof(struct regex_data));
@@ -313,7 +356,7 @@ char const *regex_arch_string(void)
 #endif
 
 struct regex_data {
-	int owned;   /*
+	int owned; /*
 		      * non zero if regex and pcre_extra is owned by this
 		      * structure and thus must be freed on destruction.
 		      */
@@ -333,9 +376,9 @@ int regex_prepare_data(struct regex_data **regex, char const *pattern_string,
 	if (!(*regex))
 		return -1;
 
-	(*regex)->regex =
-	    pcre_compile(pattern_string, PCRE_DOTALL, &errordata->error_buffer,
-			 &errordata->error_offset, NULL);
+	(*regex)->regex = pcre_compile(pattern_string, PCRE_DOTALL,
+				       &errordata->error_buffer,
+				       &errordata->error_offset, NULL);
 	if (!(*regex)->regex)
 		goto err;
 
@@ -359,7 +402,8 @@ char const *regex_version(void)
 }
 
 int regex_load_mmap(struct mmap_area *mmap_area, struct regex_data **regex,
-		    int do_load_precompregex __attribute__((unused)), bool *regex_compiled)
+		    int do_load_precompregex __attribute__((unused)),
+		    bool *regex_compiled)
 {
 	int rc;
 	uint32_t data_u32, entry_len;
@@ -420,9 +464,10 @@ err:
 	return -1;
 }
 
-static inline pcre_extra *get_pcre_extra(struct regex_data *regex)
+static inline const pcre_extra *get_pcre_extra(const struct regex_data *regex)
 {
-	if (!regex) return NULL;
+	if (!regex)
+		return NULL;
 	if (regex->owned) {
 		return regex->sd;
 	} else if (regex->lsd.study_data) {
@@ -432,14 +477,14 @@ static inline pcre_extra *get_pcre_extra(struct regex_data *regex)
 	}
 }
 
-int regex_writef(struct regex_data *regex, FILE *fp,
+int regex_writef(const struct regex_data *regex, FILE *fp,
 		 int do_write_precompregex __attribute__((unused)))
 {
 	int rc;
 	size_t len;
 	uint32_t data_u32;
 	size_t size;
-	pcre_extra *sd = get_pcre_extra(regex);
+	const pcre_extra *sd = get_pcre_extra(regex);
 
 	/* determine the size of the pcre data in bytes */
 	rc = pcre_fullinfo(regex->regex, NULL, PCRE_INFO_SIZE, &size);
@@ -459,8 +504,8 @@ int regex_writef(struct regex_data *regex, FILE *fp,
 
 	if (sd) {
 		/* determine the size of the pcre study info */
-		rc =
-		    pcre_fullinfo(regex->regex, sd, PCRE_INFO_STUDYSIZE, &size);
+		rc = pcre_fullinfo(regex->regex, sd, PCRE_INFO_STUDYSIZE,
+				   &size);
 		if (rc < 0 || size >= UINT32_MAX)
 			return -3;
 	} else
@@ -499,9 +544,9 @@ int regex_match(struct regex_data *regex, char const *subject, int partial)
 {
 	int rc;
 
-	rc = pcre_exec(regex->regex, get_pcre_extra(regex),
-		       subject, strlen(subject), 0,
-		       partial ? PCRE_PARTIAL_SOFT : 0, NULL, 0);
+	rc = pcre_exec(regex->regex, get_pcre_extra(regex), subject,
+		       strlen(subject), 0, partial ? PCRE_PARTIAL_SOFT : 0,
+		       NULL, 0);
 	switch (rc) {
 	case 0:
 		return REGEX_MATCH;
@@ -523,7 +568,7 @@ int regex_match(struct regex_data *regex, char const *subject, int partial)
  * Preferably, this function would be replaced with an algorithm that computes
  * the equivalence of the automatons systematically.
  */
-int regex_cmp(struct regex_data *regex1, struct regex_data *regex2)
+int regex_cmp(const struct regex_data *regex1, const struct regex_data *regex2)
 {
 	int rc;
 	size_t len1, len2;
@@ -537,7 +582,7 @@ int regex_cmp(struct regex_data *regex1, struct regex_data *regex2)
 	return SELABEL_EQUAL;
 }
 
-struct regex_data *regex_data_create(void)
+static struct regex_data *regex_data_create(void)
 {
 	return (struct regex_data *)calloc(1, sizeof(struct regex_data));
 }
@@ -547,12 +592,16 @@ struct regex_data *regex_data_create(void)
 void regex_format_error(struct regex_error_data const *error_data, char *buffer,
 			size_t buf_size)
 {
-	unsigned the_end_length = buf_size > 4 ? 4 : buf_size;
-	char *ptr = &buffer[buf_size - the_end_length];
+	unsigned the_end_length;
+	char *ptr;
 	int rc = 0;
 	size_t pos = 0;
+
 	if (!buffer || !buf_size)
 		return;
+
+	the_end_length = buf_size > 4 ? 4 : buf_size;
+	ptr = &buffer[buf_size - the_end_length];
 	rc = snprintf(buffer, buf_size, "REGEX back-end error: ");
 	if (rc < 0)
 		/*
@@ -590,11 +639,11 @@ void regex_format_error(struct regex_error_data const *error_data, char *buffer,
 
 	if (error_data->error_offset > 0) {
 #ifdef USE_PCRE2
-		rc = snprintf(buffer + pos, buf_size - pos, "At offset %zu: ",
-			      error_data->error_offset);
+		rc = snprintf(buffer + pos, buf_size - pos,
+			      "At offset %zu: ", error_data->error_offset);
 #else
-		rc = snprintf(buffer + pos, buf_size - pos, "At offset %d: ",
-			      error_data->error_offset);
+		rc = snprintf(buffer + pos, buf_size - pos,
+			      "At offset %d: ", error_data->error_offset);
 #endif
 		if (rc < 0)
 			abort();
@@ -640,5 +689,4 @@ truncated:
 	default:
 		break;
 	}
-	return;
 }
