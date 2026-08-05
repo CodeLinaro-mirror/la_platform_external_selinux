@@ -22,6 +22,10 @@ Archives of the mailing list are available at https://lore.kernel.org/selinux.
 See the [SELinux Userspace wiki](https://github.com/SELinuxProject/selinux/wiki)
 for more information.
 
+Minimum Supported Kernel Version
+--------------------------------
+Linux v3.0 (for /sys/fs/selinux mount point directory)
+
 Installation
 ------------
 
@@ -33,6 +37,7 @@ SELinux libraries and tools are packaged in several Linux distributions:
 * Debian and Ubuntu (https://packages.debian.org/sid/policycoreutils)
 * Gentoo (https://packages.gentoo.org/packages/sys-apps/policycoreutils)
 * RHEL and Fedora (https://src.fedoraproject.org/rpms/policycoreutils)
+* SLES and openSUSE (https://src.opensuse.org/pool/policycoreutils)
 * Yocto Project (http://git.yoctoproject.org/cgit/cgit.cgi/meta-selinux/tree/recipes-security/selinux)
 * and many more (https://repology.org/project/policycoreutils/versions)
 
@@ -63,6 +68,7 @@ dnf install \
 
 # For Python and Ruby bindings
 dnf install \
+    python3-build \
     python3-devel \
     python3-pip \
     python3-setuptools \
@@ -96,6 +102,7 @@ apt-get install --no-install-recommends --no-install-suggests \
 
 # For Python and Ruby bindings
 apt-get install --no-install-recommends --no-install-suggests \
+    python3-build \
     python3-dev \
     python3-pip \
     python3-setuptools \
@@ -148,6 +155,10 @@ set when overriding are:
 - -fno-semantic-interposition for gcc or compilers that do not do this. clang does this by default. clang-10 and up
    will support passing this flag, but ignore it. Previous clang versions fail.
 
+## Setting EXTRA_LD_FLAGS
+
+Build with EXTRA_LD_FLAGS=--undefined-version to fix linking against
+musl with llvm.
 
 macOS
 -----

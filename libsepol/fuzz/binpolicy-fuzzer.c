@@ -1,6 +1,7 @@
 #include <sepol/debug.h>
 #include <sepol/kernel_to_cil.h>
 #include <sepol/kernel_to_conf.h>
+#include <sepol/module_to_cil.h>
 #include <sepol/policydb/expand.h>
 #include <sepol/policydb/hierarchy.h>
 #include <sepol/policydb/link.h>
@@ -10,10 +11,8 @@ extern int policydb_validate(sepol_handle_t *handle, const policydb_t *p);
 
 extern int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
-
 // set to 1 to enable more verbose libsepol logging
 #define VERBOSE 0
-
 
 static int write_binary_policy(policydb_t *p, FILE *outfp)
 {
@@ -36,7 +35,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
 	policy_file_init(&pf);
 	pf.type = PF_USE_MEMORY;
-	pf.data = (char *) data;
+	pf.data = (char *)data;
 	pf.len = size;
 
 	if (policydb_init(&policydb))
@@ -49,16 +48,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 		goto exit;
 
 	if (policydb.policy_type == POLICY_KERN) {
-		(void) policydb_optimize(&policydb);
+		(void)policydb_optimize(&policydb);
 
 		if (policydb_validate(NULL, &policydb) == -1)
 			abort();
 	}
 
 	if (policydb.global->branch_list)
-		(void) check_assertions(NULL, &policydb, policydb.global->branch_list->avrules);
+		(void)check_assertions(NULL, &policydb,
+				       policydb.global->branch_list->avrules);
 
-	(void) hierarchy_check_constraints(NULL, &policydb);
+	(void)hierarchy_check_constraints(NULL, &policydb);
 
 	devnull = fopen("/dev/null", "we");
 	if (!devnull)
@@ -73,29 +73,34 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
 		if (sepol_kernel_policydb_to_cil(devnull, &policydb))
 			abort();
-
-	} else if (policydb.policy_type == POLICY_BASE) {
-		if (link_modules(NULL, &policydb, NULL, 0, VERBOSE))
-			goto exit;
-
-		if (policydb_init(&out))
-			goto exit;
-
-		if (expand_module(NULL, &policydb, &out, VERBOSE, /*check_assertions=*/0))
-			goto exit;
-
-		(void) check_assertions(NULL, &out, out.global->branch_list->avrules);
-		(void) hierarchy_check_constraints(NULL, &out);
-
-		if (write_binary_policy(&out, devnull))
+	} else {
+		if (sepol_module_policydb_to_cil(devnull, &policydb, 0))
 			abort();
 
-		if (sepol_kernel_policydb_to_conf(devnull, &out))
-			abort();
+		if (policydb.policy_type == POLICY_BASE) {
+			if (link_modules(NULL, &policydb, NULL, 0, VERBOSE))
+				goto exit;
 
-		if (sepol_kernel_policydb_to_cil(devnull, &out))
-			abort();
+			if (policydb_init(&out))
+				goto exit;
 
+			if (expand_module(NULL, &policydb, &out, VERBOSE,
+					  /*check_assertions=*/0))
+				goto exit;
+
+			(void)check_assertions(
+				NULL, &out, out.global->branch_list->avrules);
+			(void)hierarchy_check_constraints(NULL, &out);
+
+			if (write_binary_policy(&out, devnull))
+				abort();
+
+			if (sepol_kernel_policydb_to_conf(devnull, &out))
+				abort();
+
+			if (sepol_kernel_policydb_to_cil(devnull, &out))
+				abort();
+		}
 	}
 
 exit:

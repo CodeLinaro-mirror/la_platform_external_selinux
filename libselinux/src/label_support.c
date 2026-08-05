@@ -22,7 +22,8 @@
  *            errno will be set.
  *
  */
-static inline int read_spec_entry(char **entry, const char **ptr, size_t *len, const char **errbuf)
+static inline int read_spec_entry(char **entry, const char **ptr, size_t *len,
+				  const char **errbuf)
 {
 	const char *tmp_buf;
 
@@ -70,7 +71,8 @@ static inline int read_spec_entry(char **entry, const char **ptr, size_t *len, c
  * This function calls read_spec_entry() to do the actual string processing.
  * As such, can return anything from that function as well.
  */
-int  read_spec_entries(char *line_buf, size_t nread, const char **errbuf, int num_args, ...)
+int read_spec_entries(char *line_buf, size_t nread, const char **errbuf,
+		      int num_args, ...)
 {
 	char **spec_entry;
 	const char *buf_p;
@@ -79,6 +81,11 @@ int  read_spec_entries(char *line_buf, size_t nread, const char **errbuf, int nu
 	va_list ap;
 
 	*errbuf = NULL;
+
+	if (nread == 0) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	if (line_buf[nread - 1] == '\n')
 		line_buf[nread - 1] = '\0';
@@ -103,7 +110,8 @@ int  read_spec_entries(char *line_buf, size_t nread, const char **errbuf, int nu
 	while (items < num_args) {
 		spec_entry = va_arg(ap, char **);
 
-		if (buf_p[0] == '\0' || nread - 1 == (size_t)(buf_p - line_buf)) {
+		if (buf_p[0] == '\0' ||
+		    nread - 1 == (size_t)(buf_p - line_buf)) {
 			va_end(ap);
 			return items;
 		}
@@ -121,11 +129,12 @@ int  read_spec_entries(char *line_buf, size_t nread, const char **errbuf, int nu
 }
 
 /* Once all the specfiles are in the hash_buf, generate the hash. */
-void  digest_gen_hash(struct selabel_digest *digest)
+void digest_gen_hash(struct selabel_digest *digest)
 {
 	Sha1Context context;
 	size_t remaining_size;
 	const unsigned char *ptr;
+	const uint32_t chunkSize = UINT32_MAX >> 3;
 
 	/* If SELABEL_OPT_DIGEST not set then just return */
 	if (!digest)
@@ -133,13 +142,13 @@ void  digest_gen_hash(struct selabel_digest *digest)
 
 	Sha1Initialise(&context);
 
-	/* Process in blocks of UINT32_MAX bytes */
+	/* Process in blocks of chunkSize bytes */
 	remaining_size = digest->hashbuf_size;
 	ptr = digest->hashbuf;
-	while (remaining_size > UINT32_MAX) {
-		Sha1Update(&context, ptr, UINT32_MAX);
-		remaining_size -= UINT32_MAX;
-		ptr += UINT32_MAX;
+	while (remaining_size > chunkSize) {
+		Sha1Update(&context, ptr, chunkSize);
+		remaining_size -= chunkSize;
+		ptr += chunkSize;
 	}
 	Sha1Update(&context, ptr, remaining_size);
 
@@ -160,9 +169,8 @@ void  digest_gen_hash(struct selabel_digest *digest)
  *
  * Return %0 on success, -%1 with @errno set on failure.
  */
-int  digest_add_specfile(struct selabel_digest *digest, FILE *fp,
-				    const char *from_addr, size_t buf_len,
-				    const char *path)
+int digest_add_specfile(struct selabel_digest *digest, FILE *fp,
+			const char *from_addr, size_t buf_len, const char *path)
 {
 	unsigned char *tmp_buf;
 
@@ -186,27 +194,23 @@ int  digest_add_specfile(struct selabel_digest *digest, FILE *fp,
 		if (fseek(fp, 0L, SEEK_SET) == -1)
 			return -1;
 
-		if (fread(digest->hashbuf + (digest->hashbuf_size - buf_len),
-					    1, buf_len, fp) != buf_len)
+		if (fread(digest->hashbuf + (digest->hashbuf_size - buf_len), 1,
+			  buf_len, fp) != buf_len)
 			return -1;
 
-	} else if (from_addr) {
-		tmp_buf = memcpy(digest->hashbuf +
-				    (digest->hashbuf_size - buf_len),
-				    from_addr, buf_len);
-		if (!tmp_buf)
-			return -1;
-	}
+	} else if (from_addr)
+		memcpy(digest->hashbuf + (digest->hashbuf_size - buf_len),
+		       from_addr, buf_len);
+
 	/* Now add path to list */
+	if (digest->specfile_cnt >= DIGEST_FILES_MAX) {
+		errno = EOVERFLOW;
+		return -1;
+	}
 	digest->specfile_list[digest->specfile_cnt] = strdup(path);
 	if (!digest->specfile_list[digest->specfile_cnt])
 		return -1;
 
 	digest->specfile_cnt++;
-	if (digest->specfile_cnt > DIGEST_FILES_MAX) {
-		errno = EOVERFLOW;
-		return -1;
-	}
-
 	return 0;
 }
