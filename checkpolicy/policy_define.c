@@ -2039,12 +2039,15 @@ static int avrule_read_xperm_value(const char *id, uint16_t *value)
 {
 	unsigned long val = strtoul(id, NULL, 0);
 
-	if (val > UINT16_MAX) {
-		yyerror2(
-			"extended permission value 0x%lx exceeds the maximum of 0x%x",
-			val, UINT16_MAX);
-		return -1;
-	}
+	// ANDROID: Our policy contains extended permissions that are declared
+	// using more than 16 bits. It allow us to keep the same complete ioctl
+	// value as the kernel source code. This facilitates any code search.
+	// if (val > UINT16_MAX) {
+	// 	yyerror2(
+	// 		"extended permission value 0x%lx exceeds the maximum of 0x%x",
+	// 		val, UINT16_MAX);
+	// 	return -1;
+	// }
 	*value = (uint16_t)val;
 	return 0;
 }
