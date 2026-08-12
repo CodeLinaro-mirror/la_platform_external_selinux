@@ -36,3 +36,11 @@ cc_binary {
     // /system/bin/bootstrap/linker.
     bootstrap: true,
 }
+
+cc_binary_host {
+    name: "secilcheck",
+    cflags: common_CFLAGS,
+    srcs: ["secilcheck.c"],
+    static_libs: ["libsepol"],
+    stl: "none",
+}
