@@ -193,7 +193,7 @@ TEST_F(AndroidSELinuxTest, LoadAndLookupSeAppContextBooleanFalse)
 
         // For the boolean selectors with a default value, check that the
         // loading fail (as this is a duplicate of the catchall).
-        string defaultFalseBooleans[] = { "isIsolatedComputeApp", "isSdkSandboxAudit", "isSdkSandboxNext", "fromRunAs" };
+        string defaultFalseBooleans[] = { "isIsolatedComputeApp", "isIsolatedGpuApp", "isSdkSandboxAudit", "isSdkSandboxNext", "fromRunAs" };
 	for (int i=0; i < arraysize(defaultFalseBooleans); i++) {
 		string seapp_contexts =
 			"user=_app " + defaultFalseBooleans[i] + "=false domain=y type=x levelFrom=user\n"
@@ -209,6 +209,7 @@ TEST_F(AndroidSELinuxTest, LoadAndLookupSeAppContextBooleanTrue)
 		"user=_app isPrivApp=true domain=privapp type=x levelFrom=user\n"
 		"user=_app isEphemeralApp=true domain=ephemeralapp type=x levelFrom=user\n"
 		"user=_app isIsolatedComputeApp=true domain=isolatedapp type=x levelFrom=user\n"
+		"user=_app isIsolatedGpuApp=true domain=isolatedgpuapp type=x levelFrom=user\n"
 		"user=_app isSdkSandboxAudit=true domain=sdk_audit type=x levelFrom=user\n"
 		"user=_app isSdkSandboxNext=true domain=sdk_next type=x levelFrom=user\n"
 		"user=_app fromRunAs=true domain=runas type=x levelFrom=user\n"
@@ -220,6 +221,7 @@ TEST_F(AndroidSELinuxTest, LoadAndLookupSeAppContextBooleanTrue)
 	ExpectContextForSeInfo("default:privapp:partition=system:complete", "u:r:privapp:s0:c512,c768");
 	ExpectContextForSeInfo("default:ephemeralapp:partition=system:complete", "u:r:ephemeralapp:s0:c512,c768");
 	ExpectContextForSeInfo("default:isolatedComputeApp:partition=system:complete", "u:r:isolatedapp:s0:c512,c768");
+	ExpectContextForSeInfo("default:isolatedGpuApp:partition=system:complete", "u:r:isolatedgpuapp:s0:c512,c768");
 	ExpectContextForSeInfo("default:isSdkSandboxAudit:partition=system:complete", "u:r:sdk_audit:s0:c512,c768");
 	ExpectContextForSeInfo("default:isSdkSandboxNext:partition=system:complete", "u:r:sdk_next:s0:c512,c768");
 	ExpectContextForSeInfo("default:fromRunAs:partition=system:complete", "u:r:runas:s0:c512,c768");
@@ -239,6 +241,16 @@ TEST(AndroidSeAppTest, ParseValidSeInfo)
 	EXPECT_STREQ(info.base, "default");
 	EXPECT_EQ(info.targetSdkVersion, 10000);
 	EXPECT_EQ(info.is, IS_PRIV_APP);
+	EXPECT_EQ(info.isPreinstalledApp, true);
+	EXPECT_STREQ(info.partition, "system");
+
+	seinfo = "default:isolatedGpuApp:partition=system:complete";
+	ret = parse_seinfo(seinfo.c_str(), &info);
+
+	EXPECT_EQ(ret, 0);
+	EXPECT_STREQ(info.base, "default");
+	EXPECT_EQ(info.targetSdkVersion, 0);
+	EXPECT_EQ(info.is, IS_ISOLATED_GPU_APP);
 	EXPECT_EQ(info.isPreinstalledApp, true);
 	EXPECT_STREQ(info.partition, "system");
 
