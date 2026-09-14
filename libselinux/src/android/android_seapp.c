@@ -147,6 +147,7 @@ struct seapp_context {
 	int32_t minTargetSdkVersion;
 	bool fromRunAs;
 	bool isIsolatedComputeApp;
+	bool isIsolatedGpuApp;
 	bool isSdkSandboxAudit;
 	bool isSdkSandboxNext;
 	/* outputs */
@@ -515,6 +516,15 @@ int seapp_context_reload_internal(const path_alts_t *context_paths)
 						free_seapp_context(cur);
 						goto err;
 					}
+				} else if (!strcasecmp(name, "isIsolatedGpuApp")) {
+					if (!strcasecmp(value, "true"))
+						cur->isIsolatedGpuApp = true;
+					else if (!strcasecmp(value, "false"))
+						cur->isIsolatedGpuApp = false;
+					else {
+						free_seapp_context(cur);
+						goto err;
+					}
 				} else if (!strcasecmp(name, "isSdkSandboxAudit")) {
 					if (!strcasecmp(value, "true"))
 						cur->isSdkSandboxAudit = true;
@@ -581,6 +591,7 @@ int seapp_context_reload_internal(const path_alts_t *context_paths)
 				(!s1->isPrivAppSet || s1->isPrivApp == s2->isPrivApp) &&
 				(!s1->isEphemeralAppSet || s1->isEphemeralApp == s2->isEphemeralApp) &&
 				(s1->isIsolatedComputeApp == s2->isIsolatedComputeApp) &&
+				(s1->isIsolatedGpuApp == s2->isIsolatedGpuApp) &&
 				(s1->isSdkSandboxAudit == s2->isSdkSandboxAudit) &&
 				(s1->isSdkSandboxNext == s2->isSdkSandboxNext);
 
@@ -605,13 +616,14 @@ int seapp_context_reload_internal(const path_alts_t *context_paths)
 		for (i = 0; i < nspec; i++) {
 			cur = seapp_contexts[i];
 			selinux_log(SELINUX_INFO, "%s:  isSystemServer=%s isEphemeralApp=%s "
-				"isIsolatedComputeApp=%s isSdkSandboxAudit=%s isSdkSandboxNext=%s "
+				"isIsolatedComputeApp=%s isIsolatedGpuApp=%s isSdkSandboxAudit=%s isSdkSandboxNext=%s "
 				"user=%s seinfo=%s name=%s isPrivApp=%s minTargetSdkVersion=%d "
 				"fromRunAs=%s -> domain=%s type=%s level=%s levelFrom=%s",
 				__FUNCTION__,
 				cur->isSystemServer ? "true" : "false",
 				cur->isEphemeralAppSet ? (cur->isEphemeralApp ? "true" : "false") : "null",
 				cur->isIsolatedComputeApp ? "true" : "false",
+				cur->isIsolatedGpuApp ? "true" : "false",
 				cur->isSdkSandboxAudit ? "true" : "false",
 				cur->isSdkSandboxNext ? "true" : "false",
 				cur->user.str,
@@ -673,6 +685,7 @@ void selinux_android_seapp_context_init(void) {
 
 #define PRIVILEGED_APP_STR "privapp"
 #define ISOLATED_COMPUTE_APP_STR "isolatedComputeApp"
+#define ISOLATED_GPU_APP_STR "isolatedGpuApp"
 #define APPLY_SDK_SANDBOX_AUDIT_RESTRICTIONS_STR "isSdkSandboxAudit"
 #define APPLY_SDK_SANDBOX_NEXT_RESTRICTIONS_STR "isSdkSandboxNext"
 #define EPHEMERAL_APP_STR "ephemeralapp"
@@ -753,6 +766,10 @@ int parse_seinfo(const char* seinfo, struct parsed_seinfo* info) {
 		}
 		if (!strcmp(token, ISOLATED_COMPUTE_APP_STR)) {
 			info->is |= IS_ISOLATED_COMPUTE_APP;
+			continue;
+		}
+		if (!strcmp(token, ISOLATED_GPU_APP_STR)) {
+			info->is |= IS_ISOLATED_GPU_APP;
 			continue;
 		}
 		if (!strcmp(token, APPLY_SDK_SANDBOX_AUDIT_RESTRICTIONS_STR)) {
@@ -907,6 +924,9 @@ int seapp_context_lookup_internal(enum seapp_kind kind,
 			continue;
 
 		if (cur->isIsolatedComputeApp != ((info.is & IS_ISOLATED_COMPUTE_APP) != 0))
+			continue;
+
+		if (cur->isIsolatedGpuApp != ((info.is & IS_ISOLATED_GPU_APP) != 0))
 			continue;
 
 		if (cur->isSdkSandboxAudit != ((info.is & IS_SDK_SANDBOX_AUDIT) != 0))
