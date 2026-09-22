@@ -135,7 +135,7 @@ cc_defaults {
                 ],
             },
             shared: {
-                shared_libs: [
+                static_libs: [
                     "libpackagelistparser",
                 ],
             },
@@ -150,8 +150,10 @@ cc_defaults {
         ],
     },
     shared: {
-        shared_libs: [
+        static_libs: [
             "libpcre2",
+        ],
+        shared_libs: [
             "liblog",
         ],
     },
@@ -165,8 +167,6 @@ cc_defaults {
         "src",
     ],
     export_include_dirs: ["include"],
-
-    stl: "none",
 }
 
 cc_defaults {
