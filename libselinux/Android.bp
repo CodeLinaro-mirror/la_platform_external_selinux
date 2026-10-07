@@ -267,6 +267,7 @@ rust_bindgen {
     wrapper_src: "rust/selinux.h",
     crate_name: "selinux_bindgen",
     visibility: [
+        "//frameworks/native/cmds/installd:__subpackages__",
         "//frameworks/native/libs/binder/rust/tests",
         "//system/security/keystore2:__subpackages__",
         "//packages/modules/Virtualization:__subpackages__",
